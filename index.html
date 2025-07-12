@@ -555,11 +555,12 @@
                     if (data.type === "progress") {
                       updateProgress(data.current, data.total, data.modName);
                     } else if (data.type === "complete") {
-                      checkResults = data.results;
-                      showResults(data.results);
+                      checkResults = data;
+                      console.log("Results received:", data); // Debug log
+                      showResults(data);
                     }
                   } catch (e) {
-                    console.error("Error parsing JSON:", e);
+                    console.error("Error parsing JSON:", e, "Line:", line);
                   }
                 }
               }
@@ -584,7 +585,9 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            a.download = "mod_check_report.json";
+            a.download = `mod_check_report_${
+              new Date().toISOString().split("T")[0]
+            }.json`;
             a.click();
             URL.revokeObjectURL(url);
           }
@@ -598,8 +601,17 @@
         ).textContent = `Checking ${current}/${total}: ${modName}`;
       }
 
-      function showResults(results) {
-        const summary = results.summary;
+      function showResults(data) {
+        console.log("Showing results:", data); // Debug log
+
+        // Hide progress section
+        document.getElementById("progressSection").style.display = "none";
+
+        // Show results section
+        document.getElementById("resultsSection").style.display = "block";
+
+        const summary = data.summary;
+        const results = data.results;
 
         // Show summary cards
         const summaryCards = document.getElementById("summaryCards");
@@ -609,11 +621,16 @@
                     <p>✅ Up to Date</p>
                 </div>
                 <div class="summary-card outdated">
-                    <h3>${summary.outdated}</h3>
+                    <h3>${
+                      summary.outdated + (summary.outdatedMissingDeps || 0)
+                    }</h3>
                     <p>⚠️ Outdated</p>
                 </div>
                 <div class="summary-card missing-deps">
-                    <h3>${summary.missingDepsOnly}</h3>
+                    <h3>${
+                      summary.missingDepsOnly +
+                      (summary.outdatedMissingDeps || 0)
+                    }</h3>
                     <p>📦 Missing Deps</p>
                 </div>
                 <div class="summary-card errors">
@@ -624,14 +641,14 @@
 
         // Show detailed results
         const modDetails = document.getElementById("modDetails");
-        const outdatedMods = results.results.filter(
+        const outdatedMods = results.filter(
           (r) => r.status === "outdated" || r.status === "outdated-missing-deps"
         );
-        const missingDepsMods = results.results.filter(
+        const missingDepsMods = results.filter(
           (r) =>
             r.status === "missing-deps" || r.status === "outdated-missing-deps"
         );
-        const errorMods = results.results.filter((r) => r.status === "error");
+        const errorMods = results.filter((r) => r.status === "error");
 
         let detailsHTML = "";
 
@@ -693,8 +710,44 @@
                 `;
         }
 
+        // Show successful mods if everything is up to date
+        if (
+          outdatedMods.length === 0 &&
+          missingDepsMods.length === 0 &&
+          errorMods.length === 0
+        ) {
+          const upToDateMods = results.filter((r) => r.status === "up-to-date");
+          detailsHTML += `
+                    <div class="mod-list">
+                        <h3>✅ All Mods Up to Date (${upToDateMods.length})</h3>
+                        ${upToDateMods
+                          .slice(0, 10)
+                          .map(
+                            (mod) => `
+                            <div class="mod-item up-to-date">
+                                <div class="mod-name">${mod.name}</div>
+                                <div class="mod-status">v${mod.currentVersion}</div>
+                            </div>
+                        `
+                          )
+                          .join("")}
+                        ${
+                          upToDateMods.length > 10
+                            ? `<p style="text-align: center; margin-top: 10px;">... and ${
+                                upToDateMods.length - 10
+                              } more</p>`
+                            : ""
+                        }
+                    </div>
+                `;
+        }
+
         modDetails.innerHTML = detailsHTML;
-        document.getElementById("resultsSection").style.display = "block";
+
+        // Scroll to results
+        document
+          .getElementById("resultsSection")
+          .scrollIntoView({ behavior: "smooth" });
       }
 
       function showError(message) {
