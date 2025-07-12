@@ -4,8 +4,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/check-mods.js": {
-      "maxDuration": 300,
-      "runtime": "nodejs18.x"
+      "maxDuration": 300
     }
   },
   "routes": [
