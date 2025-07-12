@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "functions": {
+    "api/check-mods.js": {
+      "maxDuration": 300
+    }
+  },
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/index.html"
+    }
+  ]
+}

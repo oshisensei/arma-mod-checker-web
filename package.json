@@ -1,0 +1,28 @@
+{
+  "name": "arma-reforger-mod-checker",
+  "version": "1.0.0",
+  "description": "Web app to check Arma Reforger mod versions",
+  "main": "index.html",
+  "scripts": {
+    "start": "node mod-checker.js",
+    "dev": "vercel dev",
+    "build": "echo 'No build step needed'",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "keywords": [
+    "arma",
+    "reforger",
+    "mods",
+    "version-check",
+    "webapp"
+  ],
+  "author": "Sergent Pichon",
+  "license": "MIT"
+}
