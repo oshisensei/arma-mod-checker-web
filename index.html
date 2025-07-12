@@ -338,11 +338,8 @@
             reader.onload = function (e) {
               try {
                 configData = JSON.parse(e.target.result);
-                if (
-                  configData.gameProperties &&
-                  configData.gameProperties.mods
-                ) {
-                  const modCount = configData.gameProperties.mods.length;
+                if (configData.game && configData.game.mods) {
+                  const modCount = configData.game.mods.length;
                   document.getElementById("fileName").textContent = file.name;
                   document.getElementById("modCount").textContent = modCount;
                   document.getElementById("fileInfo").style.display = "block";
@@ -351,9 +348,7 @@
                   throw new Error("Invalid config format");
                 }
               } catch (error) {
-                showError(
-                  "Invalid JSON file or missing gameProperties.mods array"
-                );
+                showError("Invalid JSON file or missing game.mods array");
                 configData = null;
               }
             };
@@ -382,7 +377,7 @@
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                mods: configData.gameProperties.mods,
+                mods: configData.game.mods,
               }),
             });
 
