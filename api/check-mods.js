@@ -1,5 +1,5 @@
-const axios = require("axios");
-const cheerio = require("cheerio");
+import axios from "axios";
+import * as cheerio from "cheerio";
 
 // Configuration
 const DELAY_BETWEEN_REQUESTS = 1000;

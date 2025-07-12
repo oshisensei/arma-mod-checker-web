@@ -1,14 +1,21 @@
 {
   "version": 2,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "functions": {
     "api/check-mods.js": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "runtime": "nodejs18.x"
     }
   },
   "routes": [
     {
       "src": "/",
       "dest": "/index.html"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
     }
   ]
 }

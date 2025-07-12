@@ -97,6 +97,35 @@
         transform: none;
       }
 
+      .tab-button {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 8px 8px 0 0;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: bold;
+      }
+
+      .tab-button.active {
+        background: rgba(255, 255, 255, 0.2);
+        border-bottom: 3px solid #4caf50;
+      }
+
+      .tab-button:hover:not(.active) {
+        background: rgba(255, 255, 255, 0.15);
+      }
+
+      .tab-content {
+        display: none;
+        margin-top: 20px;
+      }
+
+      .tab-content.active {
+        display: block;
+      }
+
       .progress-section {
         margin: 25px 0;
         display: none;
@@ -276,19 +305,82 @@
       <div class="upload-section">
         <h2>📁 Upload Your Server Config</h2>
         <p>
-          Select your Arma Reforger server config.json file to check mod
-          versions
+          Select your Arma Reforger server config.json file or paste the content
+          directly
         </p>
 
-        <div class="file-input-wrapper">
-          <input type="file" id="configFile" accept=".json" />
-          <label for="configFile" class="file-input-label">
-            📂 Choose config.json file
-          </label>
+        <!-- Tab Navigation -->
+        <div
+          style="
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            justify-content: center;
+          "
+        >
+          <button
+            id="uploadTab"
+            class="tab-button active"
+            onclick="switchTab('upload')"
+          >
+            📂 Upload File
+          </button>
+          <button id="pasteTab" class="tab-button" onclick="switchTab('paste')">
+            📋 Paste JSON
+          </button>
+        </div>
+
+        <!-- Upload Section -->
+        <div id="uploadSection" class="tab-content active">
+          <div class="file-input-wrapper">
+            <input type="file" id="configFile" accept=".json" />
+            <label for="configFile" class="file-input-label">
+              📂 Choose config.json file
+            </label>
+          </div>
+        </div>
+
+        <!-- Paste Section -->
+        <div id="pasteSection" class="tab-content">
+          <textarea
+            id="configText"
+            placeholder='Paste your config.json content here...
+{
+  "game": {
+    "mods": [
+      {
+        "modId": "5DBD560C5148E1DA",
+        "name": "ACE Carrying",
+        "version": "1.3.2"
+      }
+    ]
+  }
+}'
+            style="
+              width: 100%;
+              height: 200px;
+              padding: 15px;
+              border: 2px solid rgba(255, 255, 255, 0.3);
+              border-radius: 8px;
+              background: rgba(0, 0, 0, 0.3);
+              color: white;
+              font-family: 'Courier New', monospace;
+              font-size: 14px;
+              resize: vertical;
+            "
+          ></textarea>
+          <button
+            id="parseButton"
+            class="check-button"
+            style="margin-top: 15px"
+            onclick="parseJsonText()"
+          >
+            🔍 Parse JSON
+          </button>
         </div>
 
         <div id="fileInfo" style="margin-top: 15px; display: none">
-          <p><strong>File loaded:</strong> <span id="fileName"></span></p>
+          <p><strong>Config loaded:</strong> <span id="configSource"></span></p>
           <p><strong>Mods found:</strong> <span id="modCount"></span></p>
         </div>
 
@@ -328,6 +420,61 @@
       let configData = null;
       let checkResults = null;
 
+      // Tab switching functionality
+      function switchTab(tab) {
+        // Update tab buttons
+        document.getElementById("uploadTab").classList.remove("active");
+        document.getElementById("pasteTab").classList.remove("active");
+        document.getElementById(tab + "Tab").classList.add("active");
+
+        // Update tab content
+        document.getElementById("uploadSection").classList.remove("active");
+        document.getElementById("pasteSection").classList.remove("active");
+        document.getElementById(tab + "Section").classList.add("active");
+
+        // Reset state when switching tabs
+        resetConfigState();
+      }
+
+      // Reset configuration state
+      function resetConfigState() {
+        configData = null;
+        document.getElementById("fileInfo").style.display = "none";
+        document.getElementById("checkButton").disabled = true;
+        document.getElementById("configFile").value = "";
+        document.getElementById("configText").value = "";
+      }
+
+      // Parse JSON from textarea
+      function parseJsonText() {
+        const jsonText = document.getElementById("configText").value.trim();
+
+        if (!jsonText) {
+          showError("Please enter JSON content");
+          return;
+        }
+
+        try {
+          configData = JSON.parse(jsonText);
+          if (configData.game && configData.game.mods) {
+            const modCount = configData.game.mods.length;
+            document.getElementById("configSource").textContent =
+              "Pasted JSON content";
+            document.getElementById("modCount").textContent = modCount;
+            document.getElementById("fileInfo").style.display = "block";
+            document.getElementById("checkButton").disabled = false;
+
+            // Show success feedback
+            showSuccess(`Successfully parsed JSON with ${modCount} mods`);
+          } else {
+            throw new Error("Invalid config format");
+          }
+        } catch (error) {
+          showError("Invalid JSON format or missing game.mods array");
+          configData = null;
+        }
+      }
+
       // File upload handling
       document
         .getElementById("configFile")
@@ -340,7 +487,8 @@
                 configData = JSON.parse(e.target.result);
                 if (configData.game && configData.game.mods) {
                   const modCount = configData.game.mods.length;
-                  document.getElementById("fileName").textContent = file.name;
+                  document.getElementById("configSource").textContent =
+                    file.name;
                   document.getElementById("modCount").textContent = modCount;
                   document.getElementById("fileInfo").style.display = "block";
                   document.getElementById("checkButton").disabled = false;
@@ -559,6 +707,21 @@
         setTimeout(() => {
           errorDiv.remove();
         }, 5000);
+      }
+
+      function showSuccess(message) {
+        const successDiv = document.createElement("div");
+        successDiv.className = "error-message";
+        successDiv.style.background = "rgba(76, 175, 80, 0.2)";
+        successDiv.style.borderColor = "#4CAF50";
+        successDiv.style.color = "#c8e6c9";
+        successDiv.innerHTML = `<strong>Success:</strong> ${message}`;
+
+        document.querySelector(".container").appendChild(successDiv);
+
+        setTimeout(() => {
+          successDiv.remove();
+        }, 3000);
       }
     </script>
   </body>
