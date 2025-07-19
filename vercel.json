@@ -5,9 +5,8 @@
       "maxDuration": 300
     }
   },
-  "installCommand": "npm install --legacy-peer-deps",
-  "buildCommand": "npm run build",
+  "buildCommand": "./vercel-build.sh",
   "regions": [
-    "cdg1"
+    "cdg1q"
   ]
 }

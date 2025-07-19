@@ -4,6 +4,13 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
+// Ensure all imports are available
+console.log("API module loaded with dependencies:", {
+  axios: typeof axios,
+  cheerio: typeof cheerio,
+  readFileSync: typeof readFileSync,
+});
+
 // Configuration
 const DELAY_BETWEEN_REQUESTS = 1000;
 const MAX_RETRIES = 3;
@@ -177,8 +184,47 @@ async function handleMockData(req, res, mods) {
       );
     } catch (fileError) {
       console.error("Error loading mock data file:", fileError.message);
-      // Fallback to empty array if file cannot be loaded
-      mockResults = [];
+      // Fallback to hardcoded mock data if file cannot be loaded
+      mockResults = [
+        {
+          modId: "65933C74B33C5B63",
+          name: "7e LFE USSR Variant Insurgent",
+          currentVersion: "1.0.2",
+          status: "up-to-date",
+          message: "Up to date",
+          dependencies: [
+            {
+              modId: "64CEC8E005828E5D",
+              name: "Middle East Insurgents",
+            },
+          ],
+          dependencyCheck: {
+            missing: [],
+            found: [
+              {
+                modId: "64CEC8E005828E5D",
+                name: "Middle East Insurgents",
+              },
+            ],
+            hasMissing: false,
+          },
+          size: 0.04095703125,
+        },
+        {
+          modId: "60C4CE4888FF4621",
+          name: "ACE Core",
+          currentVersion: "1.3.2",
+          status: "up-to-date",
+          message: "Up to date",
+          dependencies: [],
+          dependencyCheck: {
+            missing: [],
+            found: [],
+            hasMissing: false,
+          },
+          size: 7.58,
+        },
+      ];
     }
 
     // Set headers for streaming response
@@ -268,8 +314,12 @@ async function handleMockData(req, res, mods) {
 // Function to check a single mod
 async function checkMod(mod, configMods, retryCount = 0) {
   const url = `https://reforger.armaplatform.com/workshop/${mod.modId}`;
+  console.log(
+    `Checking mod: ${mod.name} (${mod.modId}) - Attempt ${retryCount + 1}`
+  );
 
   try {
+    console.log(`Making request to: ${url}`);
     const response = await axios.get(url, {
       headers: {
         "User-Agent":
@@ -280,7 +330,8 @@ async function checkMod(mod, configMods, retryCount = 0) {
         "Accept-Encoding": "gzip, deflate",
         Connection: "keep-alive",
       },
-      timeout: 15000,
+      timeout: 30000,
+      maxRedirects: 5,
     });
 
     const currentVersion = extractVersionFromHtml(response.data);
@@ -324,7 +375,10 @@ async function checkMod(mod, configMods, retryCount = 0) {
       size: size,
     };
   } catch (error) {
+    console.error(`Error checking mod ${mod.name}:`, error.message);
+
     if (retryCount < MAX_RETRIES) {
+      console.log(`Retrying ${mod.name} (${retryCount + 1}/${MAX_RETRIES})`);
       await delay(2000);
       return checkMod(mod, configMods, retryCount + 1);
     }
@@ -343,25 +397,44 @@ async function checkMod(mod, configMods, retryCount = 0) {
 
 // Main API handler
 export default async function handler(req, res) {
+  console.log("API handler called", { method: req.method, url: req.url });
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
+    // Verify dependencies are loaded
+    if (!axios || !cheerio) {
+      throw new Error("Required dependencies not loaded: axios or cheerio");
+    }
+
     const { mods } = req.body;
+    console.log("Received mods:", mods?.length || 0);
 
     if (!mods || !Array.isArray(mods)) {
       return res.status(400).json({ error: "Invalid mods array" });
     }
 
-    // Check if we're in development mode
+    // Check if we're in development mode or if we want to force mock data
     const isDevMode =
-      process.env.NODE_ENV === "development" || process.env.DEV_MODE === "true";
+      process.env.NODE_ENV === "development" ||
+      process.env.DEV_MODE === "true" ||
+      process.env.USE_MOCK_DATA === "true";
+
+    console.log("Environment check:", {
+      NODE_ENV: process.env.NODE_ENV,
+      DEV_MODE: process.env.DEV_MODE,
+      USE_MOCK_DATA: process.env.USE_MOCK_DATA,
+      isDevMode,
+    });
 
     if (isDevMode) {
       console.log("🔧 Development mode: Using mock data");
       return handleMockData(req, res, mods);
     }
+
+    console.log("🚀 Production mode: Using real Arma Reforger API");
 
     // Set headers for streaming response
     res.setHeader("Content-Type", "application/x-ndjson");
@@ -421,8 +494,10 @@ export default async function handler(req, res) {
     res.end();
   } catch (error) {
     console.error("API Error:", error);
-    res
-      .status(500)
-      .json({ error: "Internal server error", details: error.message });
+    res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
   }
 }
