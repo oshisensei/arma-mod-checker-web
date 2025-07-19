@@ -5,7 +5,8 @@
       "maxDuration": 300
     }
   },
-  "buildCommand": "./vercel-build.sh",
+  "installCommand": "npm ci --legacy-peer-deps --no-audit --no-fund",
+  "buildCommand": "npm run build",
   "regions": [
     "cdg1"
   ]
