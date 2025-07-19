@@ -2,7 +2,7 @@
   "version": 2,
   "functions": {
     "api/check-mods.js": {
-      "maxDuration": 600,
+      "maxDuration": 300,
       "runtime": "nodejs18.x"
     }
   },

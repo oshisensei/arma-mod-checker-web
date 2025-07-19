@@ -119,6 +119,13 @@ document
         throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
 
+      // Check if we have too many mods
+      if (configData.game.mods.length > 20) {
+        showError(
+          `Warning: Only the first 20 mods will be processed due to Vercel timeout limits. You have ${configData.game.mods.length} mods.`
+        );
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
