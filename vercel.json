@@ -2,12 +2,16 @@
   "version": 2,
   "functions": {
     "api/check-mods.js": {
-      "maxDuration": 300
+      "maxDuration": 600,
+      "runtime": "nodejs18.x"
     }
   },
   "installCommand": "npm ci --legacy-peer-deps --no-audit --no-fund",
   "buildCommand": "npm run build",
   "regions": [
     "cdg1"
-  ]
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
 }

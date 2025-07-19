@@ -9,7 +9,10 @@
     "dev": "node server.js",
     "vercel-dev": "vercel dev",
     "build": "echo 'Static build - no compilation needed'",
-    "deploy": "vercel --prod",
+    "test-api": "node test-api.js",
+    "test-api-prod": "node test-api-prod.js",
+    "deploy": "vercel --prod --yes",
+    "deploy:force": "vercel --prod --force",
     "dev:mock": "node scripts/dev-mock.js",
     "dev:real": "node scripts/dev-real.js"
   },
@@ -17,7 +20,8 @@
     "axios": "1.6.2",
     "cheerio": "1.0.0-rc.12",
     "express": "4.18.2",
-    "cors": "2.8.5"
+    "cors": "2.8.5",
+    "node-fetch": "3.3.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0"

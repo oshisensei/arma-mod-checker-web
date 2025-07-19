@@ -93,7 +93,17 @@ document
     document.getElementById("resultsSection").style.display = "none";
 
     try {
-      const response = await fetch("/api/check-mods", {
+      // Determine the correct API URL based on environment
+      const isLocalhost =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1";
+      const apiUrl = isLocalhost
+        ? "/api/check-mods"
+        : `${window.location.origin}/api/check-mods`;
+
+      console.log("Using API URL:", apiUrl);
+
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -104,7 +114,9 @@ document
       });
 
       if (!response.ok) {
-        throw new Error(`Server error: ${response.status}`);
+        const errorText = await response.text();
+        console.error("API Error Response:", errorText);
+        throw new Error(`Server error: ${response.status} - ${errorText}`);
       }
 
       const reader = response.body.getReader();
