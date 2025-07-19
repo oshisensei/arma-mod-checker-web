@@ -7,6 +7,6 @@
   },
   "buildCommand": "./vercel-build.sh",
   "regions": [
-    "cdg1q"
+    "cdg1"
   ]
 }
