@@ -2,8 +2,7 @@
   "version": 2,
   "functions": {
     "api/check-mods.js": {
-      "maxDuration": 300,
-      "runtime": "nodejs18.x"
+      "maxDuration": 300
     }
   },
   "installCommand": "npm ci --legacy-peer-deps --no-audit --no-fund",
