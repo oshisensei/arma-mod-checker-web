@@ -19,7 +19,7 @@ app.use(express.json());
 // Serve static files
 app.use(express.static(__dirname));
 
-// API route for local development
+// API routes for local development
 app.post("/api/check-mods", async (req, res) => {
   try {
     const { default: handler } = await import("./api/check-mods.js");
@@ -33,7 +33,7 @@ app.post("/api/check-mods", async (req, res) => {
   }
 });
 
-// Serve index.html for all GET routes (SPA support)
+// Serve index.html for all other GET routes (SPA support)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
