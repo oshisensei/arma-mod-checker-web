@@ -61,6 +61,48 @@ function extractVersionFromHtml(html) {
   return null;
 }
 
+// Function to extract mod size from a mod page
+function extractSizeFromHtml(html) {
+  const $ = cheerio.load(html);
+
+  // Look for "Version size" field
+  const dtElements = $("dt");
+
+  for (let i = 0; i < dtElements.length; i++) {
+    const dt = $(dtElements[i]);
+    const dtText = dt.text().trim();
+
+    if (dtText === "Version size") {
+      const dd = dt.next("dd");
+      if (dd.length > 0) {
+        const sizeText = dd.text().trim();
+        // Parse size in different formats (MB, KB, GB)
+        const sizeMatch = sizeText.match(
+          /([0-9,]+(?:\.[0-9]+)?)\s*(KB|MB|GB)/i
+        );
+        if (sizeMatch) {
+          const size = parseFloat(sizeMatch[1].replace(/,/g, ""));
+          const unit = sizeMatch[2].toUpperCase();
+
+          // Convert to MB for consistency
+          switch (unit) {
+            case "KB":
+              return size / 1024;
+            case "MB":
+              return size;
+            case "GB":
+              return size * 1024;
+            default:
+              return size;
+          }
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
 // Function to extract dependencies from a mod page
 function extractDependenciesFromHtml(html) {
   const $ = cheerio.load(html);
@@ -134,6 +176,7 @@ async function checkMod(mod, configMods, retryCount = 0) {
 
     const currentVersion = extractVersionFromHtml(response.data);
     const dependencies = extractDependenciesFromHtml(response.data);
+    const size = extractSizeFromHtml(response.data);
     const dependencyCheck = checkDependencies(dependencies, configMods);
 
     if (!currentVersion) {
@@ -169,6 +212,7 @@ async function checkMod(mod, configMods, retryCount = 0) {
       message,
       dependencies: dependencies,
       dependencyCheck: dependencyCheck,
+      size: size,
     };
   } catch (error) {
     if (retryCount < MAX_RETRIES) {
@@ -183,6 +227,7 @@ async function checkMod(mod, configMods, retryCount = 0) {
       message: `Error: ${error.message}`,
       dependencies: [],
       dependencyCheck: { missing: [], found: [], hasMissing: false },
+      size: 0,
     };
   }
 }
