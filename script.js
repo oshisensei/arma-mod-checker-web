@@ -177,7 +177,8 @@ function showResults(data) {
   document.getElementById("resultsSection").style.display = "block";
 
   const summary = data.summary;
-  const results = data.results;
+  // Handle both data.results and direct results array
+  const results = data.results || data;
 
   // Show summary cards
   const summaryCards = document.getElementById("summaryCards");
@@ -203,7 +204,6 @@ function showResults(data) {
     `;
 
   showSizeAnalysis(results);
-  showDependencyNetwork(results);
   showDetailedResults(results);
 
   document
@@ -214,7 +214,6 @@ function showResults(data) {
 function showSizeAnalysis(results) {
   const modsWithSize = results.filter((r) => r.size > 0);
   const totalSize = modsWithSize.reduce((sum, mod) => sum + mod.size, 0);
-  const averageSize = totalSize / modsWithSize.length;
   const largestMod = modsWithSize.reduce(
     (max, mod) => (mod.size > max.size ? mod : max),
     { size: 0 }
@@ -237,13 +236,6 @@ function showSizeAnalysis(results) {
             <p style="font-size: 0.9rem; opacity: 0.8; margin: 5px 0 0 0;">${
               modsWithSize.length
             } mods</p>
-        </div>
-        <div style="background: rgba(33, 150, 243, 0.1); padding: 15px; border-radius: 8px; text-align: center;">
-            <h4 style="margin: 0 0 10px 0; color: #2196F3;">📊 Average Size</h4>
-            <p style="font-size: 1.8rem; font-weight: bold; margin: 0;">${averageSize.toFixed(
-              1
-            )} MB</p>
-            <p style="font-size: 0.9rem; opacity: 0.8; margin: 5px 0 0 0;">per mod</p>
         </div>
         <div style="background: rgba(255, 152, 0, 0.1); padding: 15px; border-radius: 8px; text-align: center;">
             <h4 style="margin: 0 0 10px 0; color: #ff9800;">🏆 Largest Mod</h4>
@@ -268,71 +260,172 @@ function showDependencyNetwork(results) {
   const container = document.getElementById("networkGraph");
   container.innerHTML = "";
 
+  // Show fullscreen button
+  const fullscreenBtn = document.getElementById("fullscreenNetworkBtn");
+  fullscreenBtn.style.display = "block";
+  fullscreenBtn.onclick = () => showFullscreenNetwork(results);
+
   const width = container.offsetWidth || 800;
   const height = 400;
 
-  const nodes = [];
   const links = [];
-  const nodeMap = new Map();
 
-  // Add your mods as nodes
+  // Determine node types based on dependency levels
+  const nodeTypes = {};
+  const dependencyLevels = {};
+
+  // First pass: identify all dependency modIds
+  const allDependencyModIds = new Set();
   results.forEach((mod) => {
-    const node = {
-      id: mod.modId,
-      name: mod.name,
-      type: "your-mod",
-      size: mod.size || 1,
-      status: mod.status,
-      dependencies: mod.dependencies.length,
-    };
-    nodes.push(node);
-    nodeMap.set(mod.modId, node);
+    if (mod.dependencies) {
+      mod.dependencies.forEach((dep) => {
+        allDependencyModIds.add(dep.modId);
+      });
+    }
   });
 
-  // Add dependencies and links
-  results.forEach((mod) => {
-    mod.dependencies.forEach((dep) => {
-      if (!nodeMap.has(dep.modId)) {
-        const depNode = {
-          id: dep.modId,
-          name: dep.name,
-          type: "dependency",
-          size: 1,
-          status: "dependency",
-          dependencies: 0,
-        };
-        nodes.push(depNode);
-        nodeMap.set(dep.modId, depNode);
+  // Second pass: calculate dependency levels
+  function calculateDependencyLevel(modId) {
+    // Count how many other mods depend on this mod
+    let dependencyCount = 0;
+    results.forEach((mod) => {
+      if (
+        mod.dependencies &&
+        mod.dependencies.some((dep) => dep.modId === modId)
+      ) {
+        dependencyCount++;
       }
-
-      links.push({
-        source: mod.modId,
-        target: dep.modId,
-        type: "dependency",
-      });
     });
+    return dependencyCount;
+  }
+
+  // Calculate levels for all mods
+  results.forEach((mod) => {
+    dependencyLevels[mod.modId] = calculateDependencyLevel(mod.modId);
+  });
+
+  // Determine node types based on levels (simplified)
+  results.forEach((mod) => {
+    if (mod.dependencyCheck && mod.dependencyCheck.hasMissing) {
+      nodeTypes[mod.modId] = "missing";
+    } else if (dependencyLevels[mod.modId] === 0) {
+      nodeTypes[mod.modId] = "no-dependencies"; // Green - no one depends on this mod
+    } else {
+      nodeTypes[mod.modId] = "dependency"; // Blue - is a dependency
+    }
+
+    // Debug log
+    console.log(
+      `${mod.name}: level=${dependencyLevels[mod.modId]}, type=${
+        nodeTypes[mod.modId]
+      }, hasDeps=${mod.dependencies && mod.dependencies.length > 0}`
+    );
+  });
+
+  // Create nodes
+  const nodes = results.map((mod) => ({
+    id: mod.modId,
+    name: mod.name,
+    size: mod.size || 1000,
+    type: nodeTypes[mod.modId] || "unknown",
+    level: dependencyLevels[mod.modId] || 0,
+  }));
+
+  // Create node map for easy lookup
+  const nodeMap = new Map();
+  nodes.forEach((node) => nodeMap.set(node.id, node));
+
+  // Add dependencies and links (only direct dependencies, no transitive)
+  results.forEach((mod) => {
+    if (mod.dependencies) {
+      mod.dependencies.forEach((dep) => {
+        // Find the dependency mod
+        const depMod = results.find((m) => m.modId === dep.modId);
+        if (depMod) {
+          // Only add direct dependency links
+          links.push({
+            source: mod.modId,
+            target: dep.modId,
+            type: "dependency",
+          });
+        }
+      });
+    }
 
     // Add missing dependencies
-    mod.dependencyCheck.missing.forEach((dep) => {
-      if (!nodeMap.has(dep.modId)) {
-        const missingNode = {
-          id: dep.modId,
-          name: dep.name,
-          type: "missing",
-          size: 1,
-          status: "missing",
-          dependencies: 0,
-        };
-        nodes.push(missingNode);
-        nodeMap.set(dep.modId, missingNode);
-      }
-
-      links.push({
-        source: mod.modId,
-        target: dep.modId,
-        type: "missing",
+    if (mod.dependencyCheck && mod.dependencyCheck.missing) {
+      mod.dependencyCheck.missing.forEach((dep) => {
+        // Find the missing dependency mod
+        const depMod = results.find((m) => m.modId === dep.modId);
+        if (depMod) {
+          links.push({
+            source: mod.modId,
+            target: dep.modId,
+            type: "missing",
+          });
+        }
       });
-    });
+    }
+  });
+
+  // Remove redundant transitive links
+  const redundantLinks = [];
+
+  // For each link A -> B, check if there's a path A -> C -> B
+  links.forEach((link) => {
+    if (link.type === "dependency") {
+      const sourceId = link.source;
+      const targetId = link.target;
+
+      // Find all mods that the source depends on (excluding the target)
+      const sourceMod = results.find((m) => m.modId === sourceId);
+      if (sourceMod && sourceMod.dependencies) {
+        const intermediateDeps = sourceMod.dependencies
+          .map((dep) => dep.modId)
+          .filter((depId) => depId !== targetId);
+
+        // Check if any of these intermediate deps can reach the target
+        for (const intermediateId of intermediateDeps) {
+          if (canReach(intermediateId, targetId, results)) {
+            redundantLinks.push(link);
+            break;
+          }
+        }
+      }
+    }
+  });
+
+  // Remove redundant links
+  redundantLinks.forEach((redundantLink) => {
+    const index = links.findIndex(
+      (link) =>
+        link.source === redundantLink.source &&
+        link.target === redundantLink.target
+    );
+    if (index !== -1) {
+      links.splice(index, 1);
+    }
+  });
+
+  // Helper function to check if mod A can reach mod B through dependencies
+  function canReach(fromId, toId, mods, visited = new Set()) {
+    if (visited.has(fromId)) return false; // Avoid cycles
+    visited.add(fromId);
+
+    if (fromId === toId) return true;
+
+    const fromMod = mods.find((m) => m.modId === fromId);
+    if (!fromMod || !fromMod.dependencies) return false;
+
+    return fromMod.dependencies.some((dep) =>
+      canReach(dep.modId, toId, mods, new Set(visited))
+    );
+  }
+
+  // Initialize random positions for all nodes
+  nodes.forEach((node) => {
+    node.x = Math.random() * width;
+    node.y = Math.random() * height;
   });
 
   // Create SVG
@@ -342,6 +435,26 @@ function showDependencyNetwork(results) {
     .attr("width", width)
     .attr("height", height);
 
+  // Define arrow markers
+  svg
+    .append("defs")
+    .selectAll("marker")
+    .data(["dependency", "missing"])
+    .enter()
+    .append("marker")
+    .attr("id", (d) => `arrow-${d}`)
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 25)
+    .attr("refY", 0)
+    .attr("markerWidth", 12)
+    .attr("markerHeight", 12)
+    .attr("orient", "auto")
+    .append("path")
+    .attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", (d) => (d === "missing" ? "#f44336" : "#2196F3"))
+    .attr("stroke", (d) => (d === "missing" ? "#d32f2f" : "#1976d2"))
+    .attr("stroke-width", 1);
+
   // Create simulation
   const simulation = d3
     .forceSimulation(nodes)
@@ -350,10 +463,18 @@ function showDependencyNetwork(results) {
       d3
         .forceLink(links)
         .id((d) => d.id)
-        .distance(100)
+        .distance(120)
+        .strength(0.2)
     )
-    .force("charge", d3.forceManyBody().strength(-300))
-    .force("center", d3.forceCenter(width / 2, height / 2));
+    .force("charge", d3.forceManyBody().strength(-1500).distanceMax(200))
+    .force(
+      "collision",
+      d3
+        .forceCollide()
+        .radius((d) => Math.sqrt(d.size) * 2 + 15)
+        .strength(1.0)
+    )
+    .force("linkCollision", createLinkCollisionForce(links, 30));
 
   // Create links
   const link = svg
@@ -362,34 +483,35 @@ function showDependencyNetwork(results) {
     .data(links)
     .enter()
     .append("line")
-    .attr("stroke", (d) => (d.type === "missing" ? "#f44336" : "#666"))
+    .attr("stroke", (d) => (d.type === "missing" ? "#f44336" : "#2196F3"))
     .attr("stroke-width", 2)
     .attr("stroke-opacity", 0.6)
-    .attr("stroke-dasharray", (d) => (d.type === "missing" ? "5,5" : "none"));
+    .attr("stroke-dasharray", (d) => (d.type === "missing" ? "5,5" : "none"))
+    .attr("marker-end", (d) => `url(#arrow-${d.type})`);
 
-  // Create nodes
+  // Create simple nodes
   const node = svg
     .append("g")
     .selectAll("circle")
     .data(nodes)
     .enter()
     .append("circle")
-    .attr("r", (d) => Math.sqrt(d.size) * 3 + 5)
+    .attr("r", (d) => Math.sqrt(d.size) * 2 + 8)
     .attr("fill", (d) => {
       switch (d.type) {
-        case "your-mod":
-          return "#4CAF50";
+        case "no-dependencies":
+          return "#4CAF50"; // Green for mods without dependencies
         case "dependency":
-          return "#ff9800";
+          return "#2196F3"; // Blue for dependencies
         case "missing":
-          return "#f44336";
+          return "#f44336"; // Red for missing dependencies
         default:
           return "#666";
       }
     })
     .attr("stroke", "#fff")
     .attr("stroke-width", 2)
-    .style("cursor", "pointer")
+    .style("cursor", "grab")
     .call(
       d3
         .drag()
@@ -409,9 +531,9 @@ function showDependencyNetwork(results) {
     .enter()
     .append("text")
     .text((d) =>
-      d.name.length > 15 ? d.name.substring(0, 12) + "..." : d.name
+      d.name.length > 12 ? d.name.substring(0, 10) + "..." : d.name
     )
-    .attr("font-size", "12px")
+    .attr("font-size", "10px")
     .attr("fill", "white")
     .attr("text-anchor", "middle")
     .attr("dy", "0.35em")
@@ -424,10 +546,43 @@ function showDependencyNetwork(results) {
     .append("title")
     .text(
       (d) =>
-        `${d.name}\\nType: ${d.type}\\nSize: ${
+        `${d.name}\nType: ${d.type}\nSize: ${
           d.size ? d.size.toFixed(1) + " MB" : "Unknown"
-        }\\nDependencies: ${d.dependencies}`
+        }\nDependencies: ${d.dependencies}`
     );
+
+  // Add legend
+  const legend = svg.append("g").attr("class", "legend");
+
+  const legendData = [
+    { type: "no-dependencies", label: "Main mods", color: "#4CAF50" },
+    { type: "dependency", label: "Dependencies", color: "#2196F3" },
+    { type: "missing", label: "Missing Dependencies", color: "#f44336" },
+  ];
+
+  const legendItems = legend
+    .selectAll(".legend-item")
+    .data(legendData)
+    .enter()
+    .append("g")
+    .attr("class", "legend-item")
+    .attr("transform", (d, i) => `translate(10, ${10 + i * 25})`);
+
+  legendItems
+    .append("circle")
+    .attr("r", 6)
+    .attr("fill", (d) => d.color)
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 1);
+
+  legendItems
+    .append("text")
+    .attr("x", 15)
+    .attr("y", 4)
+    .attr("font-size", "12px")
+    .attr("fill", "#333")
+    .style("font-weight", "bold")
+    .text((d) => d.label);
 
   // Update positions
   simulation.on("tick", () => {
@@ -437,31 +592,34 @@ function showDependencyNetwork(results) {
       .attr("x2", (d) => d.target.x)
       .attr("y2", (d) => d.target.y);
 
-    node
-      .attr("cx", (d) => Math.max(20, Math.min(width - 20, d.x)))
-      .attr("cy", (d) => Math.max(20, Math.min(height - 20, d.y)));
+    node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
 
-    labels
-      .attr("x", (d) => Math.max(20, Math.min(width - 20, d.x)))
-      .attr("y", (d) => Math.max(20, Math.min(height - 20, d.y)));
+    labels.attr("x", (d) => d.x).attr("y", (d) => d.y);
   });
 
   // Drag functions
   function dragstarted(event, d) {
+    // Reactivate simulation for smooth movement and link updates
     if (!event.active) simulation.alphaTarget(0.3).restart();
+    // Fix the dragged node position to prevent it from being pulled by forces
     d.fx = d.x;
     d.fy = d.y;
+    d3.select(this).style("cursor", "grabbing");
   }
 
   function dragged(event, d) {
+    // Update fixed position to follow mouse
     d.fx = event.x;
     d.fy = event.y;
   }
 
   function dragended(event, d) {
+    // Deactivate simulation and release the node
     if (!event.active) simulation.alphaTarget(0);
+    // Release the node so it can move freely again
     d.fx = null;
     d.fy = null;
+    d3.select(this).style("cursor", "grab");
   }
 }
 
@@ -573,10 +731,40 @@ function showDetailedResults(results) {
   }
 
   modDetails.innerHTML = detailsHTML;
+
+  // Show and configure the fullscreen network button
+  const fullscreenBtn = document.getElementById("fullscreenNetworkBtn");
+  fullscreenBtn.style.display = "block";
+  fullscreenBtn.onclick = () => showFullscreenNetwork(results);
 }
 
 function showModDetails(nodeData, allResults) {
-  const modData = allResults.find((r) => r.modId === nodeData.id);
+  const modData = allResults.find((mod) => mod.modId === nodeData.id);
+
+  // Calculate total size including all dependencies (direct and indirect)
+  function calculateTotalSizeWithDependencies(modId, visited = new Set()) {
+    if (visited.has(modId)) return 0; // Avoid cycles
+    visited.add(modId);
+
+    const mod = allResults.find((m) => m.modId === modId);
+    if (!mod) return 0;
+
+    let totalSize = mod.size || 0;
+
+    // Add sizes of all dependencies
+    if (mod.dependencies) {
+      mod.dependencies.forEach((dep) => {
+        totalSize += calculateTotalSizeWithDependencies(
+          dep.modId,
+          new Set(visited)
+        );
+      });
+    }
+
+    return totalSize;
+  }
+
+  const totalSizeWithDeps = calculateTotalSizeWithDependencies(nodeData.id);
 
   let detailHTML = `
         <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
@@ -587,12 +775,15 @@ function showModDetails(nodeData, allResults) {
             <p><strong>Size:</strong> ${
               nodeData.size ? nodeData.size.toFixed(1) + " MB" : "Unknown"
             }</p>
+            <p><strong>Size w/ deps:</strong> ${
+              totalSizeWithDeps
+                ? totalSizeWithDeps.toFixed(1) + " MB"
+                : "Unknown"
+            }</p>
     `;
 
   if (modData) {
     detailHTML += `
-            <p><strong>Status:</strong> ${modData.status}</p>
-            <p><strong>Version:</strong> ${modData.version} → ${modData.currentVersion}</p>
             <p><strong>Dependencies:</strong> ${modData.dependencies.length}</p>
         `;
 
@@ -609,7 +800,11 @@ function showModDetails(nodeData, allResults) {
             `;
     }
 
-    if (modData.dependencyCheck.missing.length > 0) {
+    if (
+      modData.dependencyCheck &&
+      modData.dependencyCheck.missing &&
+      modData.dependencyCheck.missing.length > 0
+    ) {
       detailHTML += `
                 <div style="margin-top: 10px; color: #f44336;">
                     <strong>Missing Dependencies:</strong>
@@ -668,4 +863,584 @@ function showSuccess(message) {
   setTimeout(() => {
     successDiv.remove();
   }, 3000);
+}
+
+// Function to create a force that prevents link crossings
+function createLinkCollisionForce(links, strength = 30) {
+  return function () {
+    for (let i = 0; i < links.length; i++) {
+      for (let j = i + 1; j < links.length; j++) {
+        const link1 = links[i];
+        const link2 = links[j];
+
+        // Skip if links share a node
+        if (
+          link1.source === link2.source ||
+          link1.source === link2.target ||
+          link1.target === link2.source ||
+          link1.target === link2.target
+        ) {
+          continue;
+        }
+
+        // Check if links intersect
+        const intersection = getLineIntersection(
+          link1.source.x,
+          link1.source.y,
+          link1.target.x,
+          link1.target.y,
+          link2.source.x,
+          link2.source.y,
+          link2.target.x,
+          link2.target.y
+        );
+
+        if (intersection) {
+          // Apply repulsion force to separate the links
+          const dx = link1.source.x - link2.source.x;
+          const dy = link1.source.y - link2.source.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance > 0) {
+            const force = strength / (distance * distance);
+            const fx = (dx / distance) * force;
+            const fy = (dy / distance) * force;
+
+            link1.source.vx += fx;
+            link1.source.vy += fy;
+            link2.source.vx -= fx;
+            link2.source.vy -= fy;
+          }
+        }
+      }
+    }
+  };
+}
+
+// Function to check if two line segments intersect
+function getLineIntersection(x1, y1, x2, y2, x3, y3, x4, y4) {
+  const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (Math.abs(denom) < 1e-10) return null; // Lines are parallel
+
+  const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+  const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+
+  // Check if intersection point is on both line segments
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+    return {
+      x: x1 + t * (x2 - x1),
+      y: y1 + t * (y2 - y1),
+    };
+  }
+
+  return null;
+}
+
+// Fullscreen Network Functions
+function showFullscreenNetwork(results) {
+  const modal = document.getElementById("fullscreenNetworkModal");
+  const container = document.getElementById("fullscreenNetworkGraph");
+
+  modal.style.display = "flex";
+  container.innerHTML = "";
+
+  // Get container dimensions
+  const width = container.offsetWidth;
+  const height = container.offsetHeight;
+
+  const links = [];
+
+  // Determine node types based on dependency levels
+  const nodeTypes = {};
+  const dependencyLevels = {};
+
+  // First pass: identify all dependency modIds
+  const allDependencyModIds = new Set();
+  results.forEach((mod) => {
+    if (mod.dependencies) {
+      mod.dependencies.forEach((dep) => {
+        allDependencyModIds.add(dep.modId);
+      });
+    }
+  });
+
+  // Second pass: calculate dependency levels
+  function calculateDependencyLevel(modId) {
+    // Count how many other mods depend on this mod
+    let dependencyCount = 0;
+    results.forEach((mod) => {
+      if (
+        mod.dependencies &&
+        mod.dependencies.some((dep) => dep.modId === modId)
+      ) {
+        dependencyCount++;
+      }
+    });
+    return dependencyCount;
+  }
+
+  // Calculate levels for all mods
+  results.forEach((mod) => {
+    dependencyLevels[mod.modId] = calculateDependencyLevel(mod.modId);
+  });
+
+  // Determine node types based on levels (simplified)
+  results.forEach((mod) => {
+    if (mod.dependencyCheck && mod.dependencyCheck.hasMissing) {
+      nodeTypes[mod.modId] = "missing";
+    } else if (dependencyLevels[mod.modId] === 0) {
+      nodeTypes[mod.modId] = "no-dependencies"; // Green - no one depends on this mod
+    } else {
+      nodeTypes[mod.modId] = "dependency"; // Blue - is a dependency
+    }
+  });
+
+  // Create nodes
+  const nodes = results.map((mod) => ({
+    id: mod.modId,
+    name: mod.name,
+    size: mod.size || 1000,
+    type: nodeTypes[mod.modId] || "unknown",
+    level: dependencyLevels[mod.modId] || 0,
+  }));
+
+  // Create node map for easy lookup
+  const nodeMap = new Map();
+  nodes.forEach((node) => nodeMap.set(node.id, node));
+
+  // Add dependencies and links (only direct dependencies, no transitive)
+  results.forEach((mod) => {
+    if (mod.dependencies) {
+      mod.dependencies.forEach((dep) => {
+        // Find the dependency mod
+        const depMod = results.find((m) => m.modId === dep.modId);
+        if (depMod) {
+          // Only add direct dependency links
+          links.push({
+            source: mod.modId,
+            target: dep.modId,
+            type: "dependency",
+          });
+        }
+      });
+    }
+
+    // Add missing dependencies
+    if (mod.dependencyCheck && mod.dependencyCheck.missing) {
+      mod.dependencyCheck.missing.forEach((dep) => {
+        // Find the missing dependency mod
+        const depMod = results.find((m) => m.modId === dep.modId);
+        if (depMod) {
+          links.push({
+            source: mod.modId,
+            target: dep.modId,
+            type: "missing",
+          });
+        }
+      });
+    }
+  });
+
+  // Remove redundant transitive links
+  const redundantLinks = [];
+
+  // For each link A -> B, check if there's a path A -> C -> B
+  links.forEach((link) => {
+    if (link.type === "dependency") {
+      const sourceId = link.source;
+      const targetId = link.target;
+
+      // Find all mods that the source depends on (excluding the target)
+      const sourceMod = results.find((m) => m.modId === sourceId);
+      if (sourceMod && sourceMod.dependencies) {
+        const intermediateDeps = sourceMod.dependencies
+          .map((dep) => dep.modId)
+          .filter((depId) => depId !== targetId);
+
+        // Check if any of these intermediate deps can reach the target
+        for (const intermediateId of intermediateDeps) {
+          if (canReach(intermediateId, targetId, results)) {
+            redundantLinks.push(link);
+            break;
+          }
+        }
+      }
+    }
+  });
+
+  // Remove redundant links
+  redundantLinks.forEach((redundantLink) => {
+    const index = links.findIndex(
+      (link) =>
+        link.source === redundantLink.source &&
+        link.target === redundantLink.target
+    );
+    if (index !== -1) {
+      links.splice(index, 1);
+    }
+  });
+
+  // Helper function to check if mod A can reach mod B through dependencies
+  function canReach(fromId, toId, mods, visited = new Set()) {
+    if (visited.has(fromId)) return false; // Avoid cycles
+    visited.add(fromId);
+
+    if (fromId === toId) return true;
+
+    const fromMod = mods.find((m) => m.modId === fromId);
+    if (!fromMod || !fromMod.dependencies) return false;
+
+    return fromMod.dependencies.some((dep) =>
+      canReach(dep.modId, toId, mods, new Set(visited))
+    );
+  }
+
+  // Initialize random positions for all nodes
+  nodes.forEach((node) => {
+    node.x = Math.random() * width;
+    node.y = Math.random() * height;
+  });
+
+  // Create SVG with zoom support
+  const svg = d3
+    .select(container)
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // Define arrow markers
+  svg
+    .append("defs")
+    .selectAll("marker")
+    .data(["dependency", "missing"])
+    .enter()
+    .append("marker")
+    .attr("id", (d) => `arrow-${d}`)
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 25)
+    .attr("refY", 0)
+    .attr("markerWidth", 12)
+    .attr("markerHeight", 12)
+    .attr("orient", "auto")
+    .append("path")
+    .attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", (d) => (d === "missing" ? "#f44336" : "#2196F3"))
+    .attr("stroke", (d) => (d === "missing" ? "#d32f2f" : "#1976d2"))
+    .attr("stroke-width", 1);
+
+  // Create zoom behavior
+  const zoom = d3
+    .zoom()
+    .scaleExtent([0.1, 4])
+    .on("zoom", (event) => {
+      g.attr("transform", event.transform);
+    });
+
+  svg.call(zoom);
+
+  // Create main group for zoom
+  const g = svg.append("g");
+
+  // Selection state
+  const selectedNodes = new Set();
+  let selectionInfo = null;
+
+  // Create selection info display
+  const selectionInfoDiv = document.createElement("div");
+  selectionInfoDiv.id = "selectionInfo";
+  selectionInfoDiv.style.cssText = `
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 10px;
+    border-radius: 5px;
+    font-size: 14px;
+    display: none;
+    z-index: 1000;
+  `;
+  container.appendChild(selectionInfoDiv);
+
+  // Function to update selection display
+  function updateSelectionDisplay() {
+    if (selectedNodes.size === 0) {
+      selectionInfoDiv.style.display = "none";
+      return;
+    }
+
+    const totalSize = Array.from(selectedNodes).reduce((sum, nodeId) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      return sum + (node ? node.size : 0);
+    }, 0);
+
+    const nodeNames = Array.from(selectedNodes).map((nodeId) => {
+      const node = nodes.find((n) => n.id === nodeId);
+      return node ? node.name : nodeId;
+    });
+
+    selectionInfoDiv.innerHTML = `
+      <div><strong>Selected: ${selectedNodes.size} mods</strong></div>
+      <div>Total size: ${totalSize.toFixed(1)} MB</div>
+      <div style="font-size: 12px; margin-top: 5px;">
+        ${nodeNames.slice(0, 3).join(", ")}${
+      nodeNames.length > 3 ? ` +${nodeNames.length - 3} more` : ""
+    }
+      </div>
+    `;
+    selectionInfoDiv.style.display = "block";
+  }
+
+  // Create simulation
+  const simulation = d3
+    .forceSimulation(nodes)
+    .force(
+      "link",
+      d3
+        .forceLink(links)
+        .id((d) => d.id)
+        .distance(180)
+        .strength(0.2)
+    )
+    .force("charge", d3.forceManyBody().strength(-2500).distanceMax(300))
+    .force(
+      "collision",
+      d3
+        .forceCollide()
+        .radius((d) => Math.sqrt(d.size) * 3 + 20)
+        .strength(1.0)
+    )
+    .force("linkCollision", createLinkCollisionForce(links, 50));
+
+  // Create links
+  const link = g
+    .append("g")
+    .selectAll("line")
+    .data(links)
+    .enter()
+    .append("line")
+    .attr("stroke", (d) => (d.type === "missing" ? "#f44336" : "#2196F3"))
+    .attr("stroke-width", 3)
+    .attr("stroke-opacity", 0.7)
+    .attr("stroke-dasharray", (d) => (d.type === "missing" ? "8,8" : "none"))
+    .attr("marker-end", (d) => `url(#arrow-${d.type})`);
+
+  // Create simple nodes
+  const node = g
+    .append("g")
+    .selectAll("circle")
+    .data(nodes)
+    .enter()
+    .append("circle")
+    .attr("r", (d) => Math.sqrt(d.size) * 3 + 12)
+    .attr("fill", (d) => {
+      switch (d.type) {
+        case "no-dependencies":
+          return "#4CAF50"; // Green
+        case "dependency":
+          return "#2196F3"; // Blue
+        case "missing":
+          return "#f44336"; // Red
+        default:
+          return "#666";
+      }
+    })
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 2)
+    .style("cursor", "grab")
+    .call(
+      d3
+        .drag()
+        .on("start", dragstarted)
+        .on("drag", dragged)
+        .on("end", dragended)
+    )
+    .on("click", function (event, d) {
+      // Check if Ctrl/Cmd key is pressed for multi-selection
+      if (event.ctrlKey || event.metaKey) {
+        event.stopPropagation();
+
+        if (selectedNodes.has(d.id)) {
+          selectedNodes.delete(d.id);
+        } else {
+          selectedNodes.add(d.id);
+        }
+
+        // Update node appearance
+        d3.select(this)
+          .attr("stroke", selectedNodes.has(d.id) ? "#FFD700" : "#fff")
+          .attr("stroke-width", selectedNodes.has(d.id) ? 4 : 2);
+
+        updateSelectionDisplay();
+      } else {
+        // Single click - show mod details
+        showModDetails(d, results);
+      }
+    });
+
+  // Add labels
+  const labels = g
+    .append("g")
+    .selectAll("text")
+    .data(nodes)
+    .enter()
+    .append("text")
+    .text((d) =>
+      d.name.length > 15 ? d.name.substring(0, 15) + "..." : d.name
+    )
+    .attr("font-size", "12px")
+    .attr("fill", "white")
+    .attr("text-anchor", "middle")
+    .attr("dy", "0.35em")
+    .style("pointer-events", "none")
+    .style("font-weight", "bold")
+    .style("text-shadow", "2px 2px 4px rgba(0,0,0,0.8)");
+
+  // Add tooltips
+  node
+    .append("title")
+    .text(
+      (d) =>
+        `${d.name}\nType: ${d.type}\nSize: ${
+          d.size ? d.size.toFixed(1) + " MB" : "Unknown"
+        }\nDependencies: ${d.dependencies}`
+    );
+
+  // Add legend (fixed position, not affected by zoom)
+  const legend = svg.append("g").attr("class", "legend");
+
+  const legendData = [
+    { type: "no-dependencies", label: "Main mods", color: "#4CAF50" },
+    { type: "dependency", label: "Dependencies", color: "#2196F3" },
+    { type: "missing", label: "Missing Dependencies", color: "#f44336" },
+  ];
+
+  const legendItems = legend
+    .selectAll(".legend-item")
+    .data(legendData)
+    .enter()
+    .append("g")
+    .attr("class", "legend-item")
+    .attr("transform", (d, i) => `translate(20, ${20 + i * 30})`);
+
+  legendItems
+    .append("circle")
+    .attr("r", 8)
+    .attr("fill", (d) => d.color)
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 2);
+
+  legendItems
+    .append("text")
+    .attr("x", 20)
+    .attr("y", 5)
+    .attr("font-size", "14px")
+    .attr("fill", "#333")
+    .style("font-weight", "bold")
+    .text((d) => d.label);
+
+  // Update positions
+  simulation.on("tick", () => {
+    link
+      .attr("x1", (d) => d.source.x)
+      .attr("y1", (d) => d.source.y)
+      .attr("x2", (d) => d.target.x)
+      .attr("y2", (d) => d.target.y);
+
+    node.attr("cx", (d) => d.x).attr("cy", (d) => d.y);
+
+    labels.attr("x", (d) => d.x).attr("y", (d) => d.y);
+  });
+
+  // Drag functions
+  function dragstarted(event, d) {
+    // Reactivate simulation for smooth movement
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    // Fix the dragged node position to prevent it from being pulled by forces
+    d.fx = d.x;
+    d.fy = d.y;
+    d3.select(this).style("cursor", "grabbing");
+  }
+
+  function dragged(event, d) {
+    // Update fixed position to follow mouse
+    d.fx = event.x;
+    d.fy = event.y;
+  }
+
+  function dragended(event, d) {
+    // Deactivate simulation and release the node
+    if (!event.active) simulation.alphaTarget(0);
+    // Release the node so it can move freely again
+    d.fx = null;
+    d.fy = null;
+    d3.select(this).style("cursor", "grab");
+  }
+
+  // Setup fullscreen controls
+  setupFullscreenControls(
+    svg,
+    zoom,
+    selectedNodes,
+    node,
+    updateSelectionDisplay,
+    selectionInfoDiv
+  );
+}
+
+function setupFullscreenControls(
+  svg,
+  zoom,
+  selectedNodes,
+  node,
+  updateSelectionDisplay,
+  selectionInfoDiv
+) {
+  // Zoom controls
+  document.getElementById("zoomInBtn").onclick = () => {
+    svg.transition().duration(300).call(zoom.scaleBy, 1.3);
+  };
+
+  document.getElementById("zoomOutBtn").onclick = () => {
+    svg.transition().duration(300).call(zoom.scaleBy, 0.7);
+  };
+
+  document.getElementById("resetZoomBtn").onclick = () => {
+    svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+  };
+
+  // Clear selection button
+  document.getElementById("clearSelectionBtn").onclick = () => {
+    selectedNodes.clear();
+    node.attr("stroke", "#fff").attr("stroke-width", 2);
+    updateSelectionDisplay();
+  };
+
+  // Close button
+  document.getElementById("closeFullscreenBtn").onclick = () => {
+    // Clear selection and hide modal
+    selectedNodes.clear();
+    if (node) {
+      node.attr("stroke", "#fff").attr("stroke-width", 2);
+    }
+    if (selectionInfoDiv) {
+      selectionInfoDiv.style.display = "none";
+    }
+    document.getElementById("fullscreenNetworkModal").style.display = "none";
+  };
+
+  // Close on escape key and clear selection
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      // Clear selection if any nodes are selected
+      if (selectedNodes.size > 0) {
+        selectedNodes.clear();
+        node.attr("stroke", "#fff").attr("stroke-width", 2);
+        updateSelectionDisplay();
+      } else {
+        document.getElementById("fullscreenNetworkModal").style.display =
+          "none";
+      }
+    }
+  });
 }

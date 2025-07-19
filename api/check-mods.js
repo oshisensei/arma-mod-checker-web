@@ -1,5 +1,8 @@
 import axios from "axios";
 import * as cheerio from "cheerio";
+import { readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 // Configuration
 const DELAY_BETWEEN_REQUESTS = 1000;
@@ -9,7 +12,7 @@ const MAX_RETRIES = 3;
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Function to extract version from a mod page
-function extractVersionFromHtml(html) {
+export function extractVersionFromHtml(html) {
   const $ = cheerio.load(html);
 
   // Main method: Specific HTML structure for Arma Reforger workshop
@@ -62,7 +65,7 @@ function extractVersionFromHtml(html) {
 }
 
 // Function to extract mod size from a mod page
-function extractSizeFromHtml(html) {
+export function extractSizeFromHtml(html) {
   const $ = cheerio.load(html);
 
   // Look for "Version size" field
@@ -104,7 +107,7 @@ function extractSizeFromHtml(html) {
 }
 
 // Function to extract dependencies from a mod page
-function extractDependenciesFromHtml(html) {
+export function extractDependenciesFromHtml(html) {
   const $ = cheerio.load(html);
   const dependencies = [];
 
@@ -154,6 +157,112 @@ function checkDependencies(modDependencies, configMods) {
     found: foundDependencies,
     hasMissing: missingDependencies.length > 0,
   };
+}
+
+// Function to handle mock data in development mode
+async function handleMockData(req, res, mods) {
+  try {
+    // Load mock data from external JSON file
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+
+    const mockDataPath = join(__dirname, "mock-data.json");
+    let mockResults = [];
+
+    try {
+      const mockDataContent = readFileSync(mockDataPath, "utf8");
+      mockResults = JSON.parse(mockDataContent);
+      console.log(
+        `Loaded ${mockResults.length} mock mods from ${mockDataPath}`
+      );
+    } catch (fileError) {
+      console.error("Error loading mock data file:", fileError.message);
+      // Fallback to empty array if file cannot be loaded
+      mockResults = [];
+    }
+
+    // Set headers for streaming response
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+
+    const total = mods.length;
+
+    // Simulate progress updates
+    for (let i = 0; i < mods.length; i++) {
+      const mod = mods[i];
+
+      // Send progress update
+      res.write(
+        JSON.stringify({
+          type: "progress",
+          current: i + 1,
+          total: total,
+          modName: mod.name,
+        }) + "\n"
+      );
+
+      // Simulate delay like real API
+      await delay(100);
+    }
+
+    // Find matching mock data for the requested mods
+    const results = mods.map((mod) => {
+      const mockResult = mockResults.find((mock) => mock.modId === mod.modId);
+      if (mockResult) {
+        return {
+          ...mod,
+          currentVersion: mockResult.currentVersion,
+          status: mockResult.status,
+          message: mockResult.message,
+          dependencies: mockResult.dependencies,
+          dependencyCheck: mockResult.dependencyCheck,
+          size: mockResult.size,
+        };
+      } else {
+        // Fallback for mods not in mock data
+        return {
+          ...mod,
+          currentVersion: mod.version,
+          status: "up-to-date",
+          message: "Up to date (mock)",
+          dependencies: [],
+          dependencyCheck: { missing: [], found: [], hasMissing: false },
+          size: Math.random() * 100,
+        };
+      }
+    });
+
+    // Generate summary
+    const upToDate = results.filter((r) => r.status === "up-to-date");
+    const outdated = results.filter((r) => r.status === "outdated");
+    const missingDeps = results.filter((r) => r.status === "missing-deps");
+    const outdatedMissingDeps = results.filter(
+      (r) => r.status === "outdated-missing-deps"
+    );
+    const errors = results.filter((r) => r.status === "error");
+
+    const finalResponse = {
+      type: "complete",
+      timestamp: new Date().toISOString(),
+      summary: {
+        total: results.length,
+        upToDate: upToDate.length,
+        outdated: outdated.length,
+        missingDepsOnly: missingDeps.length,
+        outdatedMissingDeps: outdatedMissingDeps.length,
+        errors: errors.length,
+      },
+      results: results,
+    };
+
+    // Send final results
+    res.write(JSON.stringify(finalResponse) + "\n");
+    res.end();
+  } catch (error) {
+    console.error("Mock data error:", error);
+    res.status(500).json({ error: "Mock data error", details: error.message });
+  }
 }
 
 // Function to check a single mod
@@ -243,6 +352,15 @@ export default async function handler(req, res) {
 
     if (!mods || !Array.isArray(mods)) {
       return res.status(400).json({ error: "Invalid mods array" });
+    }
+
+    // Check if we're in development mode
+    const isDevMode =
+      process.env.NODE_ENV === "development" || process.env.DEV_MODE === "true";
+
+    if (isDevMode) {
+      console.log("🔧 Development mode: Using mock data");
+      return handleMockData(req, res, mods);
     }
 
     // Set headers for streaming response
