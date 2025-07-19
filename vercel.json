@@ -1,8 +1,19 @@
 {
   "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "."
+      }
+    }
+  ],
   "functions": {
     "api/check-mods.js": {
       "maxDuration": 300
     }
-  }
+  },
+  "installCommand": "npm install --legacy-peer-deps",
+  "buildCommand": "npm run build"
 }

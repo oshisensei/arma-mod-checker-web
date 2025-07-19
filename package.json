@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "node server.js",
     "vercel-dev": "vercel dev",
-    "build": "mkdir -p dist && cp index.html dist/ && echo 'Build completed'",
+    "build": "echo 'Static build - no compilation needed'",
     "deploy": "vercel --prod",
     "dev:mock": "node scripts/dev-mock.js",
     "dev:real": "node scripts/dev-real.js"
@@ -23,7 +23,7 @@
     "@types/node": "^20.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "18.x"
   },
   "keywords": [
     "arma",
