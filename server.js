@@ -33,6 +33,19 @@ app.post("/api/check-mods", async (req, res) => {
   }
 });
 
+app.post("/api/check-mods-simple", async (req, res) => {
+  try {
+    const { default: handler } = await import("./api/check-mods-simple.js");
+    await handler(req, res);
+  } catch (error) {
+    console.error("API Error:", error);
+    res.status(500).json({
+      error: "Internal server error",
+      details: error.message,
+    });
+  }
+});
+
 // Serve index.html for all other GET routes (SPA support)
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));

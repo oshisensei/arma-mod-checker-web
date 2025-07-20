@@ -1,14 +1,11 @@
 {
   "version": 2,
   "functions": {
-    "api/check-mods.js": {
+    "api/check-mods-simple.js": {
       "maxDuration": 300
     }
   },
   "regions": [
     "cdg1"
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }

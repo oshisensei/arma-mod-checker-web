@@ -98,8 +98,8 @@ document
         window.location.hostname === "localhost" ||
         window.location.hostname === "127.0.0.1";
       const apiUrl = isLocalhost
-        ? "/api/check-mods"
-        : `${window.location.origin}/api/check-mods`;
+        ? "/api/check-mods-simple"
+        : `${window.location.origin}/api/check-mods-simple`;
 
       console.log("Using API URL:", apiUrl);
 
