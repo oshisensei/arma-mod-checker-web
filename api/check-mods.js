@@ -4,13 +4,6 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
-// Ensure all imports are available
-console.log("API module loaded with dependencies:", {
-  axios: typeof axios,
-  cheerio: typeof cheerio,
-  readFileSync: typeof readFileSync,
-});
-
 // Configuration
 const DELAY_BETWEEN_REQUESTS = 1000;
 const MAX_RETRIES = 3;
@@ -404,11 +397,6 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Verify dependencies are loaded
-    if (!axios || !cheerio) {
-      throw new Error("Required dependencies not loaded: axios or cheerio");
-    }
-
     const { mods } = req.body;
     console.log("Received mods:", mods?.length || 0);
 

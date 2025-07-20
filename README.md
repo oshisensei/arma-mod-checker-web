@@ -45,12 +45,8 @@ npm run deploy
 
 | Script | Description |
 |--------|-------------|
-| `npm start` | Starts the local development server (mock mode by default) |
-| `npm run dev` | Alias for `npm start` |
 | `npm run dev:mock` | Starts the server in mock mode (no network calls) |
 | `npm run dev:real` | Starts the server in real mode (with network calls) |
-| `npm run vercel-dev` | Starts the local Vercel server |
-| `npm run build` | Build for production |
 | `npm run deploy` | Deploy to Vercel |
 
 ## 🌐 API Endpoints
