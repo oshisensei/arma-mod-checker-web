@@ -18,37 +18,106 @@ function switchTab(tab) {
 function resetConfigState() {
   configData = null;
   document.getElementById("fileInfo").style.display = "none";
-  document.getElementById("checkButton").disabled = true;
   document.getElementById("configFile").value = "";
   document.getElementById("configText").value = "";
 }
 
-// Parse JSON from textarea
-function parseJsonText() {
-  const jsonText = document.getElementById("configText").value.trim();
+// Unified function to parse JSON and analyze mods
+async function parseAndAnalyzeMods() {
+  // First, try to get config data from either file upload or textarea
+  let configDataToUse = configData;
 
-  if (!jsonText) {
-    showError("Please enter JSON content");
-    return;
+  // If no config data from file upload, try to parse from textarea
+  if (!configDataToUse) {
+    const jsonText = document.getElementById("configText").value.trim();
+
+    if (!jsonText) {
+      showError("Please enter JSON content or upload a file");
+      return;
+    }
+
+    try {
+      configDataToUse = JSON.parse(jsonText);
+      if (!configDataToUse.game || !configDataToUse.game.mods) {
+        throw new Error("Invalid config format");
+      }
+    } catch (error) {
+      showError("Invalid JSON format or missing game.mods array");
+      return;
+    }
   }
 
-  try {
-    configData = JSON.parse(jsonText);
-    if (configData.game && configData.game.mods) {
-      const modCount = configData.game.mods.length;
-      document.getElementById("configSource").textContent =
-        "Pasted JSON content";
-      document.getElementById("modCount").textContent = modCount;
-      document.getElementById("fileInfo").style.display = "block";
-      document.getElementById("checkButton").disabled = false;
+  // Now proceed with the analysis
+  const button = document.getElementById("checkButton");
+  const originalText = button.innerHTML;
+  button.innerHTML = '<span class="loading"></span>Analyzing...';
+  button.disabled = true;
 
-      showSuccess(`Successfully parsed JSON with ${modCount} mods`);
-    } else {
-      throw new Error("Invalid config format");
+  document.getElementById("progressSection").style.display = "block";
+  document.getElementById("resultsSection").style.display = "none";
+
+  try {
+    // Determine the correct API URL based on environment
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const apiUrl = isLocalhost
+      ? "/api/check-mods-simple"
+      : `${window.location.origin}/api/check-mods-simple`;
+
+    console.log("Using API URL:", apiUrl);
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mods: configDataToUse.game.mods,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("API Error Response:", errorText);
+      throw new Error(`Server error: ${response.status} - ${errorText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      let lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (let line of lines) {
+        if (line.trim()) {
+          try {
+            const data = JSON.parse(line);
+            if (data.type === "progress") {
+              updateProgress(data.current, data.total, data.modName);
+            } else if (data.type === "complete") {
+              checkResults = data;
+              showResults(data);
+            }
+          } catch (e) {
+            console.error("Error parsing JSON:", e, "Line:", line);
+          }
+        }
+      }
     }
   } catch (error) {
-    showError("Invalid JSON format or missing game.mods array");
-    configData = null;
+    showError(`Error checking mods: ${error.message}`);
+  } finally {
+    button.innerHTML = originalText;
+    button.disabled = false;
+    document.getElementById("progressSection").style.display = "none";
   }
 }
 
@@ -65,7 +134,7 @@ document.getElementById("configFile").addEventListener("change", function (e) {
           document.getElementById("configSource").textContent = file.name;
           document.getElementById("modCount").textContent = modCount;
           document.getElementById("fileInfo").style.display = "block";
-          document.getElementById("checkButton").disabled = false;
+          showSuccess(`Successfully loaded ${file.name} with ${modCount} mods`);
         } else {
           throw new Error("Invalid config format");
         }
@@ -78,84 +147,10 @@ document.getElementById("configFile").addEventListener("change", function (e) {
   }
 });
 
-// Check mods button
+// Check mods button - now unified
 document
   .getElementById("checkButton")
-  .addEventListener("click", async function () {
-    if (!configData) return;
-
-    const button = this;
-    const originalText = button.innerHTML;
-    button.innerHTML = '<span class="loading"></span>Checking...';
-    button.disabled = true;
-
-    document.getElementById("progressSection").style.display = "block";
-    document.getElementById("resultsSection").style.display = "none";
-
-    try {
-      // Determine the correct API URL based on environment
-      const isLocalhost =
-        window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1";
-      const apiUrl = isLocalhost
-        ? "/api/check-mods-simple"
-        : `${window.location.origin}/api/check-mods-simple`;
-
-      console.log("Using API URL:", apiUrl);
-
-      const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          mods: configData.game.mods,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("API Error Response:", errorText);
-        throw new Error(`Server error: ${response.status} - ${errorText}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-
-        let lines = buffer.split("\n");
-        buffer = lines.pop();
-
-        for (let line of lines) {
-          if (line.trim()) {
-            try {
-              const data = JSON.parse(line);
-              if (data.type === "progress") {
-                updateProgress(data.current, data.total, data.modName);
-              } else if (data.type === "complete") {
-                checkResults = data;
-                showResults(data);
-              }
-            } catch (e) {
-              console.error("Error parsing JSON:", e, "Line:", line);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      showError(`Error checking mods: ${error.message}`);
-    } finally {
-      button.innerHTML = originalText;
-      button.disabled = false;
-      document.getElementById("progressSection").style.display = "none";
-    }
-  });
+  .addEventListener("click", parseAndAnalyzeMods);
 
 // Download report button
 document
