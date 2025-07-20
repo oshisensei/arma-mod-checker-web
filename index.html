@@ -4,299 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>🎮 Arma Reforger Mod Checker</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      body {
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-        color: white;
-        min-height: 100vh;
-        padding: 20px;
-      }
-
-      .container {
-        max-width: 1200px;
-        margin: 0 auto;
-        background: rgba(0, 0, 0, 0.3);
-        border-radius: 15px;
-        padding: 30px;
-        backdrop-filter: blur(10px);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-      }
-
-      h1 {
-        text-align: center;
-        margin-bottom: 30px;
-        font-size: 2.5rem;
-        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-      }
-
-      .upload-section {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 25px;
-        margin-bottom: 25px;
-        border: 2px dashed rgba(255, 255, 255, 0.3);
-        text-align: center;
-      }
-
-      .file-input-wrapper {
-        position: relative;
-        display: inline-block;
-        margin: 20px 0;
-      }
-
-      #configFile {
-        display: none;
-      }
-
-      .file-input-label {
-        background: #4caf50;
-        color: white;
-        padding: 12px 24px;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        display: inline-block;
-        font-weight: bold;
-      }
-
-      .file-input-label:hover {
-        background: #45a049;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      }
-
-      .check-button {
-        background: #ff6b35;
-        color: white;
-        border: none;
-        padding: 15px 30px;
-        font-size: 1.1rem;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-weight: bold;
-        margin: 20px 10px;
-      }
-
-      .check-button:hover:not(:disabled) {
-        background: #e55a2b;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-      }
-
-      .check-button:disabled {
-        background: #666;
-        cursor: not-allowed;
-        transform: none;
-      }
-
-      .tab-button {
-        background: rgba(255, 255, 255, 0.1);
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 8px 8px 0 0;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        font-weight: bold;
-      }
-
-      .tab-button.active {
-        background: rgba(255, 255, 255, 0.2);
-        border-bottom: 3px solid #4caf50;
-      }
-
-      .tab-button:hover:not(.active) {
-        background: rgba(255, 255, 255, 0.15);
-      }
-
-      .tab-content {
-        display: none;
-        margin-top: 20px;
-      }
-
-      .tab-content.active {
-        display: block;
-      }
-
-      .progress-section {
-        margin: 25px 0;
-        display: none;
-      }
-
-      .progress-bar {
-        width: 100%;
-        height: 20px;
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 10px;
-        overflow: hidden;
-        margin: 15px 0;
-      }
-
-      .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #4caf50, #45a049);
-        width: 0%;
-        transition: width 0.3s ease;
-      }
-
-      .progress-text {
-        text-align: center;
-        font-weight: bold;
-        margin: 10px 0;
-      }
-
-      .results-section {
-        margin-top: 30px;
-        display: none;
-      }
-
-      .summary-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 20px;
-        margin: 25px 0;
-      }
-
-      .summary-card {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 10px;
-        padding: 20px;
-        text-align: center;
-        border-left: 4px solid;
-      }
-
-      .summary-card.up-to-date {
-        border-left-color: #4caf50;
-      }
-      .summary-card.outdated {
-        border-left-color: #ff9800;
-      }
-      .summary-card.missing-deps {
-        border-left-color: #2196f3;
-      }
-      .summary-card.errors {
-        border-left-color: #f44336;
-      }
-
-      .summary-card h3 {
-        font-size: 2rem;
-        margin-bottom: 10px;
-      }
-
-      .mod-list {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-        padding: 20px;
-        margin: 20px 0;
-        max-height: 400px;
-        overflow-y: auto;
-      }
-
-      .mod-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 5px;
-        margin: 5px 0;
-      }
-
-      .mod-item.up-to-date {
-        background: rgba(76, 175, 80, 0.1);
-      }
-      .mod-item.outdated {
-        background: rgba(255, 152, 0, 0.1);
-      }
-      .mod-item.missing-deps {
-        background: rgba(33, 150, 243, 0.1);
-      }
-      .mod-item.error {
-        background: rgba(244, 67, 54, 0.1);
-      }
-
-      .mod-name {
-        font-weight: bold;
-        flex-grow: 1;
-      }
-
-      .mod-status {
-        font-size: 0.9rem;
-        padding: 4px 8px;
-        border-radius: 4px;
-        margin-left: 10px;
-      }
-
-      .download-button {
-        background: #2196f3;
-        color: white;
-        border: none;
-        padding: 10px 20px;
-        border-radius: 5px;
-        cursor: pointer;
-        margin: 20px 10px;
-        font-weight: bold;
-      }
-
-      .download-button:hover {
-        background: #1976d2;
-      }
-
-      .loading {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255, 255, 255, 0.3);
-        border-radius: 50%;
-        border-top-color: #fff;
-        animation: spin 1s ease-in-out infinite;
-        margin-right: 10px;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .error-message {
-        background: rgba(244, 67, 54, 0.2);
-        border: 1px solid #f44336;
-        color: #ffcdd2;
-        padding: 15px;
-        border-radius: 8px;
-        margin: 20px 0;
-      }
-
-      @media (max-width: 768px) {
-        .container {
-          padding: 20px;
-        }
-
-        h1 {
-          font-size: 2rem;
-        }
-
-        .summary-cards {
-          grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-          gap: 15px;
-        }
-
-        .mod-item {
-          flex-direction: column;
-          align-items: flex-start;
-          gap: 8px;
-        }
-      }
-    </style>
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="container">
@@ -385,12 +93,12 @@
         </div>
 
         <button id="checkButton" class="check-button" disabled>
-          🔍 Check Mod Versions
+          🔍 Analyze Mods
         </button>
       </div>
 
       <div class="progress-section" id="progressSection">
-        <h3>⏳ Checking mods...</h3>
+        <h3>⏳ Analyzing mods...</h3>
         <div class="progress-bar">
           <div class="progress-fill" id="progressFill"></div>
         </div>
@@ -402,6 +110,33 @@
 
         <div class="summary-cards" id="summaryCards">
           <!-- Summary cards will be populated here -->
+        </div>
+
+        <!-- Size Analysis Section -->
+        <div id="sizeAnalysis" style="margin: 30px 0">
+          <h3>📦 Size Analysis</h3>
+          <div
+            id="sizeStats"
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+              gap: 15px;
+              margin: 20px 0;
+            "
+          >
+            <!-- Size statistics will be populated here -->
+          </div>
+        </div>
+
+        <!-- Dependency Graph Button -->
+        <div style="margin: 30px 0; text-align: center">
+          <button
+            id="fullscreenNetworkBtn"
+            class="fullscreen-button"
+            style="display: none; padding: 15px 30px; font-size: 16px"
+          >
+            🔗 View Dependency Graph
+          </button>
         </div>
 
         <div id="modDetails">
@@ -416,366 +151,37 @@
       </div>
     </div>
 
-    <script>
-      let configData = null;
-      let checkResults = null;
+    <!-- Fullscreen Network Modal -->
+    <div
+      id="fullscreenNetworkModal"
+      class="fullscreen-modal"
+      style="display: none"
+    >
+      <div class="fullscreen-modal-content">
+        <div class="fullscreen-modal-header">
+          <h2>🔗 Dependency Graph</h2>
+          <div style="font-size: 12px; color: #666; margin-top: 5px">
+            Hold Ctrl/Cmd + Click to select multiple mods
+          </div>
+          <div class="fullscreen-controls">
+            <button id="zoomInBtn" class="control-button">🔍+</button>
+            <button id="zoomOutBtn" class="control-button">🔍-</button>
+            <button id="resetZoomBtn" class="control-button">🔄 Reset</button>
+            <button id="clearSelectionBtn" class="control-button">
+              🗑️ Clear Selection
+            </button>
+            <button id="closeFullscreenBtn" class="control-button">
+              ❌ Close
+            </button>
+          </div>
+        </div>
+        <div class="fullscreen-modal-body">
+          <div id="fullscreenNetworkGraph"></div>
+        </div>
+      </div>
+    </div>
 
-      // Tab switching functionality
-      function switchTab(tab) {
-        // Update tab buttons
-        document.getElementById("uploadTab").classList.remove("active");
-        document.getElementById("pasteTab").classList.remove("active");
-        document.getElementById(tab + "Tab").classList.add("active");
-
-        // Update tab content
-        document.getElementById("uploadSection").classList.remove("active");
-        document.getElementById("pasteSection").classList.remove("active");
-        document.getElementById(tab + "Section").classList.add("active");
-
-        // Reset state when switching tabs
-        resetConfigState();
-      }
-
-      // Reset configuration state
-      function resetConfigState() {
-        configData = null;
-        document.getElementById("fileInfo").style.display = "none";
-        document.getElementById("checkButton").disabled = true;
-        document.getElementById("configFile").value = "";
-        document.getElementById("configText").value = "";
-      }
-
-      // Parse JSON from textarea
-      function parseJsonText() {
-        const jsonText = document.getElementById("configText").value.trim();
-
-        if (!jsonText) {
-          showError("Please enter JSON content");
-          return;
-        }
-
-        try {
-          configData = JSON.parse(jsonText);
-          if (configData.game && configData.game.mods) {
-            const modCount = configData.game.mods.length;
-            document.getElementById("configSource").textContent =
-              "Pasted JSON content";
-            document.getElementById("modCount").textContent = modCount;
-            document.getElementById("fileInfo").style.display = "block";
-            document.getElementById("checkButton").disabled = false;
-
-            // Show success feedback
-            showSuccess(`Successfully parsed JSON with ${modCount} mods`);
-          } else {
-            throw new Error("Invalid config format");
-          }
-        } catch (error) {
-          showError("Invalid JSON format or missing game.mods array");
-          configData = null;
-        }
-      }
-
-      // File upload handling
-      document
-        .getElementById("configFile")
-        .addEventListener("change", function (e) {
-          const file = e.target.files[0];
-          if (file) {
-            const reader = new FileReader();
-            reader.onload = function (e) {
-              try {
-                configData = JSON.parse(e.target.result);
-                if (configData.game && configData.game.mods) {
-                  const modCount = configData.game.mods.length;
-                  document.getElementById("configSource").textContent =
-                    file.name;
-                  document.getElementById("modCount").textContent = modCount;
-                  document.getElementById("fileInfo").style.display = "block";
-                  document.getElementById("checkButton").disabled = false;
-                } else {
-                  throw new Error("Invalid config format");
-                }
-              } catch (error) {
-                showError("Invalid JSON file or missing game.mods array");
-                configData = null;
-              }
-            };
-            reader.readAsText(file);
-          }
-        });
-
-      // Check mods button
-      document
-        .getElementById("checkButton")
-        .addEventListener("click", async function () {
-          if (!configData) return;
-
-          const button = this;
-          const originalText = button.innerHTML;
-          button.innerHTML = '<span class="loading"></span>Checking...';
-          button.disabled = true;
-
-          document.getElementById("progressSection").style.display = "block";
-          document.getElementById("resultsSection").style.display = "none";
-
-          try {
-            const response = await fetch("/api/check-mods", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                mods: configData.game.mods,
-              }),
-            });
-
-            if (!response.ok) {
-              throw new Error(`Server error: ${response.status}`);
-            }
-
-            // Handle streaming response
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-
-              buffer += decoder.decode(value, { stream: true });
-
-              // Process complete JSON objects
-              let lines = buffer.split("\n");
-              buffer = lines.pop(); // Keep incomplete line in buffer
-
-              for (let line of lines) {
-                if (line.trim()) {
-                  try {
-                    const data = JSON.parse(line);
-                    if (data.type === "progress") {
-                      updateProgress(data.current, data.total, data.modName);
-                    } else if (data.type === "complete") {
-                      checkResults = data;
-                      console.log("Results received:", data); // Debug log
-                      showResults(data);
-                    }
-                  } catch (e) {
-                    console.error("Error parsing JSON:", e, "Line:", line);
-                  }
-                }
-              }
-            }
-          } catch (error) {
-            showError(`Error checking mods: ${error.message}`);
-          } finally {
-            button.innerHTML = originalText;
-            button.disabled = false;
-            document.getElementById("progressSection").style.display = "none";
-          }
-        });
-
-      // Download report button
-      document
-        .getElementById("downloadButton")
-        .addEventListener("click", function () {
-          if (checkResults) {
-            const blob = new Blob([JSON.stringify(checkResults, null, 2)], {
-              type: "application/json",
-            });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `mod_check_report_${
-              new Date().toISOString().split("T")[0]
-            }.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-          }
-        });
-
-      function updateProgress(current, total, modName) {
-        const percentage = (current / total) * 100;
-        document.getElementById("progressFill").style.width = percentage + "%";
-        document.getElementById(
-          "progressText"
-        ).textContent = `Checking ${current}/${total}: ${modName}`;
-      }
-
-      function showResults(data) {
-        console.log("Showing results:", data); // Debug log
-
-        // Hide progress section
-        document.getElementById("progressSection").style.display = "none";
-
-        // Show results section
-        document.getElementById("resultsSection").style.display = "block";
-
-        const summary = data.summary;
-        const results = data.results;
-
-        // Show summary cards
-        const summaryCards = document.getElementById("summaryCards");
-        summaryCards.innerHTML = `
-                <div class="summary-card up-to-date">
-                    <h3>${summary.upToDate}</h3>
-                    <p>✅ Up to Date</p>
-                </div>
-                <div class="summary-card outdated">
-                    <h3>${
-                      summary.outdated + (summary.outdatedMissingDeps || 0)
-                    }</h3>
-                    <p>⚠️ Outdated</p>
-                </div>
-                <div class="summary-card missing-deps">
-                    <h3>${
-                      summary.missingDepsOnly +
-                      (summary.outdatedMissingDeps || 0)
-                    }</h3>
-                    <p>📦 Missing Deps</p>
-                </div>
-                <div class="summary-card errors">
-                    <h3>${summary.errors}</h3>
-                    <p>❌ Errors</p>
-                </div>
-            `;
-
-        // Show detailed results
-        const modDetails = document.getElementById("modDetails");
-        const outdatedMods = results.filter(
-          (r) => r.status === "outdated" || r.status === "outdated-missing-deps"
-        );
-        const missingDepsMods = results.filter(
-          (r) =>
-            r.status === "missing-deps" || r.status === "outdated-missing-deps"
-        );
-        const errorMods = results.filter((r) => r.status === "error");
-
-        let detailsHTML = "";
-
-        if (outdatedMods.length > 0) {
-          detailsHTML += `
-                    <div class="mod-list">
-                        <h3>⚠️ Outdated Mods (${outdatedMods.length})</h3>
-                        ${outdatedMods
-                          .map(
-                            (mod) => `
-                            <div class="mod-item outdated">
-                                <div class="mod-name">${mod.name}</div>
-                                <div class="mod-status">${mod.version} → ${mod.currentVersion}</div>
-                            </div>
-                        `
-                          )
-                          .join("")}
-                    </div>
-                `;
-        }
-
-        if (missingDepsMods.length > 0) {
-          detailsHTML += `
-                    <div class="mod-list">
-                        <h3>📦 Mods with Missing Dependencies (${
-                          missingDepsMods.length
-                        })</h3>
-                        ${missingDepsMods
-                          .map(
-                            (mod) => `
-                            <div class="mod-item missing-deps">
-                                <div class="mod-name">${mod.name}</div>
-                                <div class="mod-status">Missing: ${mod.dependencyCheck.missing
-                                  .map((d) => d.name)
-                                  .join(", ")}</div>
-                            </div>
-                        `
-                          )
-                          .join("")}
-                    </div>
-                `;
-        }
-
-        if (errorMods.length > 0) {
-          detailsHTML += `
-                    <div class="mod-list">
-                        <h3>❌ Errors (${errorMods.length})</h3>
-                        ${errorMods
-                          .map(
-                            (mod) => `
-                            <div class="mod-item error">
-                                <div class="mod-name">${mod.name}</div>
-                                <div class="mod-status">${mod.message}</div>
-                            </div>
-                        `
-                          )
-                          .join("")}
-                    </div>
-                `;
-        }
-
-        // Show successful mods if everything is up to date
-        if (
-          outdatedMods.length === 0 &&
-          missingDepsMods.length === 0 &&
-          errorMods.length === 0
-        ) {
-          const upToDateMods = results.filter((r) => r.status === "up-to-date");
-          detailsHTML += `
-                    <div class="mod-list">
-                        <h3>✅ All Mods Up to Date (${upToDateMods.length})</h3>
-                        ${upToDateMods
-                          .slice(0, 10)
-                          .map(
-                            (mod) => `
-                            <div class="mod-item up-to-date">
-                                <div class="mod-name">${mod.name}</div>
-                                <div class="mod-status">v${mod.currentVersion}</div>
-                            </div>
-                        `
-                          )
-                          .join("")}
-                        ${
-                          upToDateMods.length > 10
-                            ? `<p style="text-align: center; margin-top: 10px;">... and ${
-                                upToDateMods.length - 10
-                              } more</p>`
-                            : ""
-                        }
-                    </div>
-                `;
-        }
-
-        modDetails.innerHTML = detailsHTML;
-
-        // Scroll to results
-        document
-          .getElementById("resultsSection")
-          .scrollIntoView({ behavior: "smooth" });
-      }
-
-      function showError(message) {
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "error-message";
-        errorDiv.innerHTML = `<strong>Error:</strong> ${message}`;
-
-        document.querySelector(".container").appendChild(errorDiv);
-
-        setTimeout(() => {
-          errorDiv.remove();
-        }, 5000);
-      }
-
-      function showSuccess(message) {
-        const successDiv = document.createElement("div");
-        successDiv.className = "error-message";
-        successDiv.style.background = "rgba(76, 175, 80, 0.2)";
-        successDiv.style.borderColor = "#4CAF50";
-        successDiv.style.color = "#c8e6c9";
-        successDiv.innerHTML = `<strong>Success:</strong> ${message}`;
-
-        document.querySelector(".container").appendChild(successDiv);
-
-        setTimeout(() => {
-          successDiv.remove();
-        }, 3000);
-      }
-    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="script.js"></script>
   </body>
 </html>

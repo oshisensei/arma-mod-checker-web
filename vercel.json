@@ -1,20 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "functions": {
-    "api/check-mods.js": {
+    "api/check-mods-simple.js": {
       "maxDuration": 300
     }
   },
-  "routes": [
-    {
-      "src": "/",
-      "dest": "/index.html"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    }
+  "regions": [
+    "cdg1"
   ]
 }
