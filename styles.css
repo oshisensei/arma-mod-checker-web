@@ -234,6 +234,29 @@ h1 {
     margin-left: 10px;
 }
 
+.share-button {
+    background: #9C27B0;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 20px 10px;
+    font-weight: bold;
+}
+
+.share-button:hover {
+    background: #7B1FA2;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.share-button:disabled {
+    background: #666;
+    cursor: not-allowed;
+    transform: none;
+}
+
 .download-button {
     background: #2196F3;
     color: white;

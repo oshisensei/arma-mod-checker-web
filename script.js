@@ -41,6 +41,8 @@ async function parseAndAnalyzeMods() {
       if (!configDataToUse.game || !configDataToUse.game.mods) {
         throw new Error("Invalid config format");
       }
+      // Update global configData when using textarea input
+      configData = configDataToUse;
     } catch (error) {
       showError("Invalid JSON format or missing game.mods array");
       return;
@@ -152,6 +154,171 @@ document
   .getElementById("checkButton")
   .addEventListener("click", parseAndAnalyzeMods);
 
+// Share button
+document
+  .getElementById("shareButton")
+  .addEventListener("click", async function () {
+    console.log("Share button clicked");
+    console.log("checkResults:", checkResults);
+    console.log("configData:", configData);
+
+    if (!checkResults) {
+      showError("No analysis results found. Please analyze mods first.");
+      return;
+    }
+
+    if (!configData) {
+      showError(
+        "No configuration data found. Please upload a file or paste JSON content first."
+      );
+      return;
+    }
+
+    if (!configData.game || !configData.game.mods) {
+      showError("Invalid configuration data. Please check your JSON format.");
+      return;
+    }
+
+    const button = this;
+    const originalText = button.innerHTML;
+    button.innerHTML = '<span class="loading"></span>Generating...';
+    button.disabled = true;
+
+    try {
+      // Prepare data to encode (optimized for sharing)
+      const shareData = {
+        mods: configData.game.mods,
+        results: checkResults.results || checkResults,
+        summary: checkResults.summary,
+        timestamp: Date.now(),
+      };
+
+      // Ultra-aggressive optimization for URL minification
+      if (shareData.results && Array.isArray(shareData.results)) {
+        shareData.results = shareData.results.map((mod) => {
+          const optimized = {
+            i: mod.modId,
+            n: mod.name,
+            v: mod.version,
+            s: mod.status,
+            z: Math.round(mod.size || 0), // Round size to save space
+          };
+
+          // Include dependencies with names (essential for display)
+          if (mod.dependencies && mod.dependencies.length > 0) {
+            optimized.d = mod.dependencies.map((dep) => ({
+              i: dep.modId,
+              n: dep.name,
+            }));
+          }
+
+          // Include missing dependencies with names
+          if (
+            mod.dependencyCheck &&
+            mod.dependencyCheck.missing &&
+            mod.dependencyCheck.missing.length > 0
+          ) {
+            optimized.m = mod.dependencyCheck.missing.map((dep) => ({
+              i: dep.modId,
+              n: dep.name,
+            }));
+          }
+
+          // Only include error if it exists and is not empty
+          if (mod.error && mod.error.trim()) {
+            optimized.e = mod.error.substring(0, 50); // Limit error message length
+          }
+
+          return optimized;
+        });
+      }
+
+      // Ultra-optimize summary - only include non-zero values
+      if (shareData.summary) {
+        const summary = {};
+        if (shareData.summary.upToDate > 0)
+          summary.u = shareData.summary.upToDate;
+        if (shareData.summary.outdated > 0)
+          summary.o = shareData.summary.outdated;
+        if (shareData.summary.missingDepsOnly > 0)
+          summary.m = shareData.summary.missingDepsOnly;
+        if (shareData.summary.errors > 0) summary.e = shareData.summary.errors;
+        if (shareData.summary.processedCount > 0)
+          summary.p = shareData.summary.processedCount;
+        if (shareData.summary.originalTotal > 0)
+          summary.t = shareData.summary.originalTotal;
+        if (shareData.summary.isPartial) summary.i = true;
+
+        shareData.summary = summary;
+      }
+
+      // Ultra-optimize mods array - only essential fields
+      if (shareData.mods && Array.isArray(shareData.mods)) {
+        shareData.mods = shareData.mods.map((mod) => ({
+          i: mod.modId,
+          n: mod.name,
+          v: mod.version,
+        }));
+      }
+
+      // Keep timestamp for validation
+      // delete shareData.timestamp;
+
+      // Compress and encode data
+      const jsonString = JSON.stringify(shareData);
+      const compressed = await compressData(jsonString);
+
+      // Create shareable URL
+      const shareUrl = `${window.location.origin}${window.location.pathname}?share=${compressed}`;
+
+      // Check URL length and suggest tiny URL if too long
+      if (shareUrl.length > 1500) {
+        console.warn(`URL is very long: ${shareUrl.length} characters`);
+
+        // Try to create a tiny URL using a free service
+        try {
+          const tinyUrlResponse = await fetch(
+            "https://tinyurl.com/api-create.php",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: `url=${encodeURIComponent(shareUrl)}`,
+            }
+          );
+
+          if (tinyUrlResponse.ok) {
+            const tinyUrl = await tinyUrlResponse.text();
+            if (tinyUrl && !tinyUrl.includes("error")) {
+              await navigator.clipboard.writeText(tinyUrl);
+              showSuccess(
+                `Tiny URL copied to clipboard! (${tinyUrl.length} chars vs ${shareUrl.length} chars)`
+              );
+              return;
+            }
+          }
+        } catch (error) {
+          console.warn("Tiny URL creation failed:", error);
+        }
+
+        // Fallback to original URL
+        showError(
+          `Warning: Share URL is very long (${shareUrl.length} characters). Consider using a URL shortener.`
+        );
+      }
+
+      // Copy to clipboard
+      await navigator.clipboard.writeText(shareUrl);
+      showSuccess("Share link copied to clipboard!");
+    } catch (error) {
+      showError(`Error generating share link: ${error.message}`);
+    } finally {
+      button.innerHTML = originalText;
+      button.disabled = false;
+    }
+  });
+
 // Download report button
 document
   .getElementById("downloadButton")
@@ -179,7 +346,18 @@ function updateProgress(current, total, modName) {
   ).textContent = `Checking ${current}/${total}: ${modName}`;
 }
 
+// Helper function to safely get dependencies
+function getSafeDependencies(mod) {
+  if (mod.dependencies && Array.isArray(mod.dependencies)) {
+    return mod.dependencies.filter((dep) => dep && dep.modId);
+  }
+  return [];
+}
+
 function showResults(data) {
+  // Update global variables
+  checkResults = data;
+
   document.getElementById("progressSection").style.display = "none";
   document.getElementById("resultsSection").style.display = "block";
 
@@ -235,7 +413,8 @@ function showSizeAnalysis(results) {
 
   const allDependencies = new Set();
   results.forEach((mod) => {
-    mod.dependencies.forEach((dep) => {
+    const deps = getSafeDependencies(mod);
+    deps.forEach((dep) => {
       allDependencies.add(dep.modId);
     });
   });
@@ -878,6 +1057,198 @@ function showSuccess(message) {
     successDiv.remove();
   }, 3000);
 }
+
+// Compression function using LZ-string
+async function compressData(data) {
+  try {
+    // Use LZ-string for compression with more aggressive settings
+    const compressed = LZString.compressToEncodedURIComponent(data);
+
+    // Log compression stats
+    const originalSize = data.length;
+    const compressedSize = compressed.length;
+    const compressionRatio = (
+      (1 - compressedSize / originalSize) *
+      100
+    ).toFixed(1);
+    console.log(
+      `Compression: ${originalSize} -> ${compressedSize} chars (${compressionRatio}% reduction)`
+    );
+
+    return compressed;
+  } catch (error) {
+    console.warn("Compression failed, using original data:", error);
+    return data;
+  }
+}
+
+// Decompression function
+async function decompressData(compressedData) {
+  try {
+    // Use LZ-string for decompression
+    return LZString.decompressFromEncodedURIComponent(compressedData);
+  } catch (error) {
+    console.warn("Decompression failed, using original data:", error);
+    return compressedData;
+  }
+}
+
+// Function to decompress minified data back to original format
+function decompressMinifiedData(minifiedData) {
+  const decompressed = {};
+
+  // Decompress mods
+  if (minifiedData.mods && Array.isArray(minifiedData.mods)) {
+    decompressed.mods = minifiedData.mods.map((mod) => ({
+      modId: mod.i,
+      name: mod.n,
+      version: mod.v,
+    }));
+  }
+
+  // Decompress results
+  if (minifiedData.results && Array.isArray(minifiedData.results)) {
+    decompressed.results = minifiedData.results.map((mod) => {
+      const decompressedMod = {
+        modId: mod.i,
+        name: mod.n,
+        version: mod.v,
+        status: mod.s,
+        size: mod.z,
+        dependencies: [],
+      };
+
+      // Decompress dependencies with names
+      if (mod.d && Array.isArray(mod.d)) {
+        decompressedMod.dependencies = mod.d.map((dep) => ({
+          modId: dep.i,
+          name: dep.n || "Unknown",
+        }));
+      }
+
+      // Decompress missing dependencies with names
+      if (mod.m && Array.isArray(mod.m)) {
+        decompressedMod.dependencyCheck = {
+          missing: mod.m.map((dep) => ({
+            modId: dep.i,
+            name: dep.n || "Unknown",
+          })),
+        };
+      }
+
+      // Decompress error
+      if (mod.e) {
+        decompressedMod.error = mod.e;
+      }
+
+      return decompressedMod;
+    });
+  }
+
+  // Decompress summary with defaults
+  if (minifiedData.summary) {
+    decompressed.summary = {
+      upToDate: minifiedData.summary.u || 0,
+      outdated: minifiedData.summary.o || 0,
+      missingDepsOnly: minifiedData.summary.m || 0,
+      errors: minifiedData.summary.e || 0,
+      processedCount: minifiedData.summary.p || 0,
+      originalTotal: minifiedData.summary.t || 0,
+      isPartial: minifiedData.summary.i || false,
+    };
+  }
+
+  // Add timestamp if not present
+  if (!minifiedData.timestamp) {
+    decompressed.timestamp = Date.now();
+  } else {
+    decompressed.timestamp = minifiedData.timestamp;
+  }
+
+  return decompressed;
+}
+
+// Function to load shared data from URL
+async function loadSharedData() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const encodedData = urlParams.get("share");
+
+  if (!encodedData) return;
+
+  try {
+    // Show loading state
+    document.getElementById("progressSection").style.display = "block";
+    document.getElementById("progressSection").querySelector("h3").textContent =
+      "⏳ Loading shared data...";
+
+    // Decode and decompress data
+    const jsonString = await decompressData(encodedData);
+    const shareData = JSON.parse(jsonString);
+
+    // Check if data is not too old (optional - you can remove this check)
+    const now = Date.now();
+    const oneWeekInMs = 7 * 24 * 60 * 60 * 1000;
+    if (shareData.timestamp && now - shareData.timestamp > oneWeekInMs) {
+      showError("This share link is older than 7 days and may be outdated.");
+    }
+
+    // Decompress minified data back to original format
+    const decompressedData = decompressMinifiedData(shareData);
+
+    // Set the data
+    configData = { game: { mods: decompressedData.mods } };
+    checkResults = decompressedData;
+
+    // Show the results
+    try {
+      showResults(decompressedData);
+
+      // Show success message
+      showSuccess("Shared mod analysis loaded successfully!");
+
+      // Update file info
+      document.getElementById("configSource").textContent = "Shared Link";
+      document.getElementById("modCount").textContent = shareData.mods.length;
+      document.getElementById("fileInfo").style.display = "block";
+    } catch (error) {
+      console.error("Error showing results:", error);
+      showError("Error displaying shared data. The data may be corrupted.");
+    }
+
+    // Add visual indicator for shared content
+    const container = document.querySelector(".container");
+    const sharedIndicator = document.createElement("div");
+    sharedIndicator.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: #9C27B0;
+        color: white;
+        padding: 8px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: bold;
+        z-index: 1000;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      `;
+    sharedIndicator.textContent = "🔗 Shared Content";
+    document.body.appendChild(sharedIndicator);
+
+    // Remove indicator after 5 seconds
+    setTimeout(() => {
+      if (sharedIndicator.parentElement) {
+        sharedIndicator.remove();
+      }
+    }, 5000);
+  } catch (error) {
+    showError(`Error loading shared data: ${error.message}`);
+  } finally {
+    document.getElementById("progressSection").style.display = "none";
+  }
+}
+
+// Load shared data when page loads
+document.addEventListener("DOMContentLoaded", loadSharedData);
 
 // Function to create a force that prevents link crossings
 function createLinkCollisionForce(links, strength = 30) {
