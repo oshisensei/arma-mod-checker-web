@@ -25,9 +25,32 @@ function switchTab(tab) {
     checkButton.style.display = "inline-block";
   }
 
-  // Hide results section when switching tabs
+  // Hide all results sections when switching tabs
   document.getElementById("progressSection").style.display = "none";
   document.getElementById("resultsSection").style.display = "none";
+
+  // Clear any displayed results content
+  const modDetails = document.getElementById("modDetails");
+  if (modDetails) {
+    modDetails.innerHTML = "";
+  }
+
+  // Clear summary cards
+  const summaryCards = document.getElementById("summaryCards");
+  if (summaryCards) {
+    summaryCards.innerHTML = "";
+  }
+
+  // Hide size analysis and dependency graph
+  const sizeAnalysis = document.getElementById("sizeAnalysis");
+  if (sizeAnalysis) {
+    sizeAnalysis.style.display = "none";
+  }
+
+  const fullscreenNetworkBtn = document.getElementById("fullscreenNetworkBtn");
+  if (fullscreenNetworkBtn) {
+    fullscreenNetworkBtn.style.display = "none";
+  }
 
   resetConfigState();
 }
@@ -83,8 +106,8 @@ async function parseAndAnalyzeMods() {
       window.location.hostname === "localhost" ||
       window.location.hostname === "127.0.0.1";
     const apiUrl = isLocalhost
-      ? "/api/check-mods-simple"
-      : `${window.location.origin}/api/check-mods-simple`;
+      ? "/api/check-mods"
+      : `${window.location.origin}/api/check-mods`;
 
     console.log("Using API URL:", apiUrl);
 
@@ -223,7 +246,6 @@ document
             n: mod.name,
             v: mod.version,
             s: mod.status,
-            z: Math.round(mod.size || 0), // Round size to save space
           };
 
           // Include dependencies with names (essential for display)
@@ -346,7 +368,15 @@ document
   .getElementById("downloadButton")
   .addEventListener("click", function () {
     if (checkResults) {
-      const blob = new Blob([JSON.stringify(checkResults, null, 2)], {
+      // Clean the results before downloading (remove size properties)
+      const cleanResults = {
+        ...checkResults,
+        results: checkResults.results
+          ? cleanModsForJson(checkResults.results)
+          : checkResults.results,
+      };
+
+      const blob = new Blob([JSON.stringify(cleanResults, null, 2)], {
         type: "application/json",
       });
       const url = URL.createObjectURL(blob);
@@ -467,6 +497,7 @@ async function searchMods() {
                 data.mods ? data.mods.length : 0,
                 "mods"
               );
+
               // Add any single results to selectedMods
               if (data.mods && data.mods.length > 0) {
                 selectedMods.push(...data.mods);
@@ -475,8 +506,11 @@ async function searchMods() {
               // If we have pending selections, show the first one
               if (pendingSearchTerms.length > 0) {
                 showNextModSelection();
+              } else if (selectedMods.length > 0) {
+                // We have some selected mods, show final results
+                showFinalSearchResults();
               } else {
-                // All done, show final results
+                // No mods found at all
                 showFinalSearchResults();
               }
             }
@@ -601,16 +635,21 @@ function showSearchResults(data) {
   const summaryCards = document.getElementById("summaryCards");
   const modsCount = data.mods ? data.mods.length : 0;
 
+  // Calculate total size of all mods
+  const totalSize = data.mods
+    ? data.mods.reduce((sum, mod) => sum + (mod.size || 0), 0)
+    : 0;
+  const totalSizeFormatted =
+    totalSize > 0 ? totalSize.toFixed(1) + " MB" : "Unknown";
+
   summaryCards.innerHTML = `
         <div class="summary-card up-to-date">
             <h3>${modsCount}</h3>
             <p>✅ Mods Found</p>
         </div>
         <div class="summary-card missing-deps">
-            <h3>${
-              data.timestamp ? new Date(data.timestamp).toLocaleString() : "Now"
-            }</h3>
-            <p>🕒 Generated</p>
+            <h3>${totalSizeFormatted}</h3>
+            <p>📦 Total Size</p>
         </div>
     `;
 
@@ -638,7 +677,7 @@ function showSearchResults(data) {
     );
 
     const jsonOutput = {
-      mods: sortedMods,
+      mods: cleanModsForJson(sortedMods),
     };
 
     detailsHtml += `
@@ -664,6 +703,15 @@ function showSearchResults(data) {
   // Hide size analysis and dependency graph for search results
   document.getElementById("sizeAnalysis").style.display = "none";
   document.getElementById("fullscreenNetworkBtn").style.display = "none";
+}
+
+// Function to clean mod objects for JSON output (remove size property)
+function cleanModsForJson(mods) {
+  return mods.map((mod) => {
+    const cleanMod = { ...mod };
+    delete cleanMod.size;
+    return cleanMod;
+  });
 }
 
 // Function to copy JSON to clipboard
@@ -727,9 +775,10 @@ async function selectModFromSearch(modId, modName, searchTerm) {
       throw new Error("Failed to get mod version");
     }
 
-    // Update the selected mod with the real version and dependencies
+    // Update the selected mod with the real version, dependencies, and size
     selectedMod.version = versionData.version;
     selectedMod.dependencies = versionData.dependencies || [];
+    selectedMod.size = versionData.size || 0;
 
     // Add the selected mod to our collection
     selectedMods.push(selectedMod);
@@ -769,6 +818,7 @@ async function selectModFromSearch(modId, modName, searchTerm) {
                 name: dep.name,
                 version: depVersionData.version,
                 dependencies: depVersionData.dependencies || [],
+                size: depVersionData.size || 0,
                 isDependency: true, // Flag to identify dependencies
               };
               selectedMods.push(dependencyMod);
@@ -788,6 +838,7 @@ async function selectModFromSearch(modId, modName, searchTerm) {
             name: dep.name,
             version: "Unknown",
             dependencies: [],
+            size: 0,
             isDependency: true,
           };
           selectedMods.push(dependencyMod);
@@ -848,7 +899,7 @@ async function selectModFromSearch(modId, modName, searchTerm) {
     // Still show the mod but with unknown version
     selectedMod.version = "Unknown";
 
-    const jsonOutput = { mods: [selectedMod] };
+    const jsonOutput = { mods: cleanModsForJson([selectedMod]) };
 
     modDetails.innerHTML = `
       <h3>📋 Selected Mod JSON (Version Unknown)</h3>
@@ -939,6 +990,9 @@ function showResults(data) {
   showSizeAnalysis(results);
   showDetailedResults(results);
 
+  // Ensure the size analysis section is visible
+  document.getElementById("sizeAnalysis").style.display = "block";
+
   document
     .getElementById("resultsSection")
     .scrollIntoView({ behavior: "smooth" });
@@ -961,30 +1015,30 @@ function showSizeAnalysis(results) {
   });
 
   const sizeStats = document.getElementById("sizeStats");
+
+  // Always show the size analysis section, even if no mods have size data
+  const totalSizeDisplay =
+    totalSize > 0 ? `${totalSize.toFixed(1)} MB` : "Unknown";
+  const modsWithSizeCount = modsWithSize.length;
+  const largestModName = largestMod.name || "Unknown";
+  const largestModSize = largestMod.size
+    ? `${largestMod.size.toFixed(1)} MB`
+    : "Unknown";
+
   sizeStats.innerHTML = `
         <div style="background: rgba(76, 175, 80, 0.1); padding: 15px; border-radius: 8px; text-align: center;">
             <h4 style="margin: 0 0 10px 0; color: #4CAF50;">📦 Total Size</h4>
-            <p style="font-size: 1.8rem; font-weight: bold; margin: 0;">${totalSize.toFixed(
-              1
-            )} MB</p>
-            <p style="font-size: 0.9rem; opacity: 0.8; margin: 5px 0 0 0;">${
-              modsWithSize.length
-            } mods</p>
+            <p style="font-size: 1.8rem; font-weight: bold; margin: 0;">${totalSizeDisplay}</p>
+            <p style="font-size: 0.9rem; opacity: 0.8; margin: 5px 0 0 0;">${modsWithSizeCount} mods</p>
         </div>
         <div style="background: rgba(255, 152, 0, 0.1); padding: 15px; border-radius: 8px; text-align: center;">
             <h4 style="margin: 0 0 10px 0; color: #ff9800;">🏆 Largest Mod</h4>
-            <p style="font-size: 1.2rem; font-weight: bold; margin: 0;">${
-              largestMod.name || "Unknown"
-            }</p>
-            <p style="font-size: 1.5rem; font-weight: bold; margin: 5px 0 0 0; color: #ff9800;">${
-              largestMod.size ? largestMod.size.toFixed(1) + " MB" : "Unknown"
-            }</p>
+            <p style="font-size: 1.2rem; font-weight: bold; margin: 0;">${largestModName}</p>
+            <p style="font-size: 1.5rem; font-weight: bold; margin: 5px 0 0 0; color: #ff9800;">${largestModSize}</p>
         </div>
         <div style="background: rgba(156, 39, 176, 0.1); padding: 15px; border-radius: 8px; text-align: center;">
             <h4 style="margin: 0 0 10px 0; color: #9c27b0;">🔗 Dependencies</h4>
-            <p style="font-size: 1.8rem; font-weight: bold; margin: 0;">${
-              allDependencies.size
-            }</p>
+            <p style="font-size: 1.8rem; font-weight: bold; margin: 0;">${allDependencies.size}</p>
             <p style="font-size: 0.9rem; opacity: 0.8; margin: 5px 0 0 0;">unique deps</p>
         </div>
     `;

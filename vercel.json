@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/check-mods-simple.js": {
+    "api/check-mods.js": {
       "maxDuration": 300
     },
     "api/search-mods.js": {
