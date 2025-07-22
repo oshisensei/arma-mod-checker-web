@@ -3,6 +3,9 @@
   "functions": {
     "api/check-mods-simple.js": {
       "maxDuration": 300
+    },
+    "api/search-mods.js": {
+      "maxDuration": 300
     }
   },
   "regions": [
