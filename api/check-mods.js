@@ -1,5 +1,3 @@
-import axios from "axios";
-import * as cheerio from "cheerio";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -11,130 +9,290 @@ const MAX_RETRIES = 3;
 // Function to wait
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Function to extract version from a mod page
-export function extractVersionFromHtml(html) {
-  const $ = cheerio.load(html);
+// Simple HTTP client using native Node.js
+export async function makeRequest(url, options = {}) {
+  const { protocol, hostname, port, pathname, search } = new URL(url);
+  const isHttps = protocol === "https:";
 
-  // Main method: Specific HTML structure for Arma Reforger workshop
-  const dtElements = $("dt");
+  const http = isHttps ? await import("https") : await import("http");
+  const zlib = await import("zlib");
 
-  for (let i = 0; i < dtElements.length; i++) {
-    const dt = $(dtElements[i]);
-    const dtText = dt.text().trim();
+  // Check if we're on Vercel and adjust timeout
+  const isVercel = process.env.VERCEL === "1" || process.env.VERCEL_ENV;
+  const timeout = isVercel ? 60000 : options.timeout || 30000; // 60s timeout on Vercel
 
-    if (dtText === "Version") {
-      const dd = dt.next("dd");
-      if (dd.length > 0) {
-        const versionText = dd.text().trim();
-        const versionMatch = versionText.match(
-          /^([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?)$/
-        );
-        if (versionMatch) {
-          return versionMatch[1];
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname,
+        port: port || (isHttps ? 443 : 80),
+        path: pathname + search,
+        method: options.method || "GET",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Accept-Encoding": "gzip, deflate, br",
+          "Cache-Control": "no-cache",
+          "Sec-Fetch-Dest": "document",
+          "Sec-Fetch-Mode": "navigate",
+          "Sec-Fetch-Site": "none",
+          "Sec-Fetch-User": "?1",
+          "Upgrade-Insecure-Requests": "1",
+          ...options.headers,
+        },
+        timeout: timeout,
+      },
+      (res) => {
+        let data = "";
+
+        // Handle compression
+        let stream = res;
+        const contentEncoding = res.headers["content-encoding"];
+
+        if (contentEncoding === "gzip") {
+          stream = res.pipe(zlib.createGunzip());
+        } else if (contentEncoding === "deflate") {
+          stream = res.pipe(zlib.createInflate());
+        } else if (contentEncoding === "br") {
+          stream = res.pipe(zlib.createBrotliDecompress());
         }
-      }
-    }
-  }
 
-  // Alternative patterns
-  const patterns = [
+        stream.on("data", (chunk) => (data += chunk));
+        stream.on("end", () => {
+          resolve({
+            status: res.statusCode,
+            data: data,
+            headers: res.headers,
+          });
+        });
+        stream.on("error", reject);
+      }
+    );
+
+    req.on("error", (error) => {
+      console.error(`HTTP request error for ${url}:`, error.message);
+      reject(error);
+    });
+    req.on("timeout", () => {
+      console.error(`HTTP request timeout for ${url} after ${timeout}ms`);
+      req.destroy();
+      reject(new Error(`Request timeout after ${timeout}ms`));
+    });
+
+    if (options.data) {
+      req.write(options.data);
+    }
+    req.end();
+  });
+}
+
+// Simple HTML parser using regex
+export function extractVersionFromHtml(html) {
+  console.log("Extracting version from HTML...");
+
+  // Look for version pattern in HTML - multiple patterns to try
+  const versionPatterns = [
+    // Pattern 1: <dt>Version</dt><dd>1.2.3</dd>
     /<dt[^>]*>\s*Version\s*<\/dt>\s*<dd[^>]*>\s*([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?)\s*<\/dd>/gi,
+    // Pattern 2: Version</dt><dd>1.2.3
     /Version<\/dt>\s*<dd[^>]*>([^<]*?([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?))/gi,
+    // Pattern 3: Version: 1.2.3
+    /Version[^>]*>([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?)/gi,
+    // Pattern 4: More flexible version pattern
+    /version[^>]*>([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?)/gi,
+    // Pattern 5: Look for version in any context
+    /([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?)/g,
   ];
 
-  for (const pattern of patterns) {
+  for (let i = 0; i < versionPatterns.length; i++) {
+    const pattern = versionPatterns[i];
+    console.log(`Trying pattern ${i + 1}:`, pattern.source);
+
     const matches = [...html.matchAll(pattern)];
+    console.log(`Found ${matches.length} matches for pattern ${i + 1}`);
+
     for (const match of matches) {
-      const beforeMatch = html.substring(
-        Math.max(0, match.index - 50),
-        match.index
-      );
-      if (!beforeMatch.toLowerCase().includes("game")) {
-        const versionText = match[1] || match[2];
+      const versionText = match[1] || match[2];
+      console.log(`Match found:`, versionText);
+
+      if (versionText) {
         const versionMatch = versionText.match(
           /([0-9]+\.[0-9]+(?:\.[0-9]+)?(?:\.[0-9]+)?)/
         );
         if (versionMatch) {
+          console.log(`Extracted version: ${versionMatch[1]}`);
           return versionMatch[1];
         }
       }
     }
   }
 
+  console.log("No version found in HTML");
   return null;
 }
 
-// Function to extract mod size from a mod page
+// Function to extract mod size from HTML
 export function extractSizeFromHtml(html) {
-  const $ = cheerio.load(html);
+  console.log("Extracting size from HTML...");
 
-  // Look for "Version size" field
-  const dtElements = $("dt");
+  // Look for version size pattern in HTML
+  const sizePatterns = [
+    // Pattern 1: <dt>Version size</dt><dd>7.58 MB</dd>
+    /<dt[^>]*>\s*Version size\s*<\/dt>\s*<dd[^>]*>\s*([^<]+)\s*<\/dd>/gi,
+    // Pattern 2: Version size: 7.58 MB
+    /Version size[^>]*>([^<]+)/gi,
+    // Pattern 3: Direct size pattern
+    /([0-9,]+(?:\.[0-9]+)?)\s*(KB|MB|GB)/gi,
+  ];
 
-  for (let i = 0; i < dtElements.length; i++) {
-    const dt = $(dtElements[i]);
-    const dtText = dt.text().trim();
+  for (let i = 0; i < sizePatterns.length; i++) {
+    const pattern = sizePatterns[i];
+    console.log(`Trying size pattern ${i + 1}:`, pattern.source);
 
-    if (dtText === "Version size") {
-      const dd = dt.next("dd");
-      if (dd.length > 0) {
-        const sizeText = dd.text().trim();
-        // Parse size in different formats (MB, KB, GB)
-        const sizeMatch = sizeText.match(
-          /([0-9,]+(?:\.[0-9]+)?)\s*(KB|MB|GB)/i
-        );
-        if (sizeMatch) {
-          const size = parseFloat(sizeMatch[1].replace(/,/g, ""));
-          const unit = sizeMatch[2].toUpperCase();
+    const matches = [...html.matchAll(pattern)];
+    console.log(`Found ${matches.length} size matches for pattern ${i + 1}`);
 
-          // Convert to MB for consistency
-          switch (unit) {
-            case "KB":
-              return size / 1024;
-            case "MB":
-              return size;
-            case "GB":
-              return size * 1024;
-            default:
-              return size;
-          }
+    for (const match of matches) {
+      const sizeText = match[1] || match[0];
+      console.log(`Size match found:`, sizeText);
+
+      // Parse size in different formats (MB, KB, GB)
+      const sizeMatch = sizeText.match(/([0-9,]+(?:\.[0-9]+)?)\s*(KB|MB|GB)/i);
+      if (sizeMatch) {
+        const size = parseFloat(sizeMatch[1].replace(/,/g, ""));
+        const unit = sizeMatch[2].toUpperCase();
+
+        console.log(`Parsed size: ${size} ${unit}`);
+
+        // Convert to MB for consistency
+        switch (unit) {
+          case "KB":
+            return size / 1024;
+          case "MB":
+            return size;
+          case "GB":
+            return size * 1024;
+          default:
+            return size;
         }
       }
     }
   }
 
+  console.log("No size found in HTML");
   return 0;
 }
 
-// Function to extract dependencies from a mod page
+// Function to extract dependencies from HTML
 export function extractDependenciesFromHtml(html) {
-  const $ = cheerio.load(html);
+  console.log("Extracting dependencies from HTML...");
   const dependencies = [];
+  const seenModIds = new Set();
 
-  const dependenciesSection = $("h2").filter(function () {
-    return $(this).text().trim().toLowerCase() === "dependencies";
-  });
+  // First, try to extract from the __NEXT_DATA__ script (most reliable)
+  const nextDataPattern =
+    /<script[^>]*id="__NEXT_DATA__"[^>]*>([^<]*)<\/script>/gi;
+  const nextDataMatches = [...html.matchAll(nextDataPattern)];
 
-  if (dependenciesSection.length > 0) {
-    const section = dependenciesSection.closest("section");
-    const dependencyLinks = section.find('a[href*="/workshop/"]');
+  for (const match of nextDataMatches) {
+    try {
+      const jsonData = JSON.parse(match[1]);
+      console.log("Successfully parsed __NEXT_DATA__ JSON");
 
-    dependencyLinks.each(function () {
-      const href = $(this).attr("href");
-      const name = $(this).text().trim();
+      // Navigate through the JSON structure to find dependencies
+      const pageProps = jsonData?.props?.pageProps;
+      if (pageProps) {
+        // Try different paths for dependencies
+        const depsPaths = [
+          pageProps.dependencies,
+          pageProps.asset?.dependencies,
+          pageProps.assetVersionDetail?.dependencies,
+        ];
 
-      if (href && name) {
-        const modIdMatch = href.match(/\/workshop\/([A-F0-9]+)/i);
-        if (modIdMatch) {
-          dependencies.push({
-            modId: modIdMatch[1],
-            name: name,
-          });
+        for (const deps of depsPaths) {
+          if (deps && Array.isArray(deps)) {
+            console.log(`Found ${deps.length} dependencies in JSON`);
+            deps.forEach((dep) => {
+              if (
+                dep.asset &&
+                dep.asset.id &&
+                dep.asset.name &&
+                !seenModIds.has(dep.asset.id)
+              ) {
+                console.log(
+                  `Found JSON dependency: ${dep.asset.name} (${dep.asset.id})`
+                );
+                dependencies.push({
+                  modId: dep.asset.id,
+                  name: dep.asset.name,
+                });
+                seenModIds.add(dep.asset.id);
+              }
+            });
+          }
         }
       }
-    });
+    } catch (e) {
+      console.log(`Failed to parse __NEXT_DATA__ JSON: ${e.message}`);
+    }
   }
 
+  // Fallback: Look for individual dependency objects in the HTML
+  const depObjectPattern = /"modId":\s*"([A-F0-9]+)"[^}]*"name":\s*"([^"]+)"/gi;
+  const depMatches = [...html.matchAll(depObjectPattern)];
+
+  for (const match of depMatches) {
+    const modId = match[1];
+    const name = match[2];
+    if (modId && name && !seenModIds.has(modId)) {
+      console.log(`Found HTML dependency: ${name} (${modId})`);
+      dependencies.push({ modId, name });
+      seenModIds.add(modId);
+    }
+  }
+
+  // Last resort: Look for workshop links in HTML
+  const workshopLinkPatterns = [
+    // Pattern 1: Standard workshop links
+    /<a[^>]*href="[^"]*\/workshop\/([A-F0-9]+)"[^>]*>([^<]+)<\/a>/gi,
+    // Pattern 2: More flexible workshop links
+    /href="[^"]*\/workshop\/([A-F0-9]+)"[^>]*>([^<]+)/gi,
+  ];
+
+  for (let i = 0; i < workshopLinkPatterns.length; i++) {
+    const pattern = workshopLinkPatterns[i];
+    console.log(`Trying workshop link pattern ${i + 1}:`, pattern.source);
+
+    const matches = [...html.matchAll(pattern)];
+    console.log(
+      `Found ${matches.length} workshop link matches for pattern ${i + 1}`
+    );
+
+    for (const match of matches) {
+      const modId = match[1];
+      const name = match[2] ? match[2].trim() : `Mod ${modId}`;
+
+      // Filter out invalid mod IDs, duplicates, and non-dependency links
+      if (
+        modId &&
+        modId.length >= 8 &&
+        !seenModIds.has(modId) &&
+        name !== "Info" &&
+        !name.includes("Mod ") &&
+        name !== "Workshop" &&
+        name !== "Home"
+      ) {
+        console.log(`Found workshop dependency: ${name} (${modId})`);
+        dependencies.push({ modId, name });
+        seenModIds.add(modId);
+      }
+    }
+  }
+
+  console.log(`Total unique dependencies found: ${dependencies.length}`);
   return dependencies;
 }
 
@@ -159,7 +317,7 @@ function checkDependencies(modDependencies, configMods) {
   };
 }
 
-// Function to handle mock data in development mode
+// Function to handle mock data
 async function handleMockData(req, res, mods) {
   try {
     // Load mock data from external JSON file
@@ -177,7 +335,7 @@ async function handleMockData(req, res, mods) {
       );
     } catch (fileError) {
       console.error("Error loading mock data file:", fileError.message);
-      // Fallback to hardcoded mock data if file cannot be loaded
+      // Fallback to hardcoded mock data
       mockResults = [
         {
           modId: "65933C74B33C5B63",
@@ -251,28 +409,21 @@ async function handleMockData(req, res, mods) {
       if (mockResult) {
         return {
           ...mod,
-          currentVersion: mockResult.currentVersion,
-          status: mockResult.status,
-          message: mockResult.message,
-          dependencies: mockResult.dependencies,
-          dependencyCheck: mockResult.dependencyCheck,
-          size: mockResult.size,
-        };
-      } else {
-        // Fallback for mods not in mock data
-        return {
-          ...mod,
-          currentVersion: mod.version,
-          status: "up-to-date",
-          message: "Up to date (mock)",
-          dependencies: [],
-          dependencyCheck: { missing: [], found: [], hasMissing: false },
-          size: Math.random() * 100,
+          ...mockResult,
         };
       }
+      return {
+        ...mod,
+        currentVersion: "MOCK_NOT_FOUND",
+        status: "error",
+        message: "Mock data not found",
+        dependencies: [],
+        dependencyCheck: { missing: [], found: [], hasMissing: false },
+        size: 0,
+      };
     });
 
-    // Generate summary
+    // Generate final summary
     const upToDate = results.filter((r) => r.status === "up-to-date");
     const outdated = results.filter((r) => r.status === "outdated");
     const missingDeps = results.filter((r) => r.status === "missing-deps");
@@ -313,24 +464,29 @@ async function checkMod(mod, configMods, retryCount = 0) {
 
   try {
     console.log(`Making request to: ${url}`);
-    const response = await axios.get(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.5",
-        "Accept-Encoding": "gzip, deflate",
-        Connection: "keep-alive",
-      },
-      timeout: 30000,
-      maxRedirects: 5,
-    });
+    const response = await makeRequest(url);
+
+    if (response.status !== 200) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    console.log(
+      `Received HTML response, length: ${response.data.length} characters`
+    );
+    console.log(
+      `HTML preview (first 500 chars):`,
+      response.data.substring(0, 500)
+    );
 
     const currentVersion = extractVersionFromHtml(response.data);
-    const dependencies = extractDependenciesFromHtml(response.data);
     const size = extractSizeFromHtml(response.data);
+    const dependencies = extractDependenciesFromHtml(response.data);
     const dependencyCheck = checkDependencies(dependencies, configMods);
+
+    console.log(`Results for ${mod.name}:`);
+    console.log(`- Version found: ${currentVersion}`);
+    console.log(`- Size found: ${size} MB`);
+    console.log(`- Dependencies found: ${dependencies.length}`);
 
     if (!currentVersion) {
       return {

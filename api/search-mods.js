@@ -1,5 +1,8 @@
-import { makeRequest } from "./check-mods-simple.js";
-import { extractDependenciesFromHtml } from "./check-mods.js";
+import {
+  makeRequest,
+  extractDependenciesFromHtml,
+  extractSizeFromHtml,
+} from "./check-mods.js";
 
 // Configuration
 const DELAY_BETWEEN_REQUESTS = 1000;
@@ -11,6 +14,8 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Function to extract search results from HTML
 export function extractSearchResultsFromHtml(html, searchTerm) {
   console.log(`Extracting search results for: ${searchTerm}`);
+  console.log(`HTML length: ${html.length} characters`);
+  console.log(`HTML preview (first 500 chars): ${html.substring(0, 500)}`);
   const results = [];
 
   // First, extract all mod IDs and names
@@ -403,12 +408,14 @@ async function getModVersion(modId) {
       console.log(
         `Failed to get version for ${modId}: HTTP ${response.status}`
       );
-      return { version: "Unknown", dependencies: [] };
+      return { version: "Unknown", dependencies: [], size: 0 };
     }
 
-    // Extract dependencies from the main page
+    // Extract dependencies and size from the main page
     const dependencies = extractDependenciesFromHtml(response.data);
+    const size = extractSizeFromHtml(response.data);
     console.log(`Found ${dependencies.length} dependencies for ${modId}`);
+    console.log(`Found size for ${modId}: ${size} MB`);
 
     // Try to extract version from the main page first
     const versionPatterns = [
@@ -428,7 +435,7 @@ async function getModVersion(modId) {
           );
           if (versionMatch) {
             console.log(`Found version for ${modId}: ${versionMatch[1]}`);
-            return { version: versionMatch[1], dependencies };
+            return { version: versionMatch[1], dependencies, size };
           }
         }
       }
@@ -454,21 +461,26 @@ async function getModVersion(modId) {
           console.log(
             `Found version in changelog for ${modId}: ${versionText}`
           );
-          return { version: versionText, dependencies };
+          return { version: versionText, dependencies, size };
         }
       }
     }
 
     console.log(`No version found for ${modId}`);
-    return { version: "Unknown", dependencies };
+    return { version: "Unknown", dependencies, size };
   } catch (error) {
     console.error(`Error getting version for ${modId}:`, error.message);
-    return { version: "Unknown", dependencies: [] };
+    return { version: "Unknown", dependencies: [], size: 0 };
   }
 }
 
 // Function to search for a single mod
 async function searchMod(searchTerm, retryCount = 0) {
+  // Check if we're on Vercel for logging purposes only
+  const isVercel = process.env.VERCEL === "1" || process.env.VERCEL_ENV;
+  console.log(
+    `Environment check: Vercel=${isVercel}, NODE_ENV=${process.env.NODE_ENV}`
+  );
   // For testing purposes, use known mods if search fails
   const knownMods = {
     ACE: [
@@ -527,13 +539,6 @@ async function searchMod(searchTerm, retryCount = 0) {
       response.data.substring(0, 1000)
     );
 
-    // Debug: Save HTML to file for analysis
-    const fs = await import("fs");
-    const path = await import("path");
-    const htmlPath = path.join(process.cwd(), "debug_search.html");
-    fs.writeFileSync(htmlPath, response.data);
-    console.log(`Saved HTML to: ${htmlPath}`);
-
     // Debug: Look for workshop links in the HTML
     const workshopLinks = response.data.match(/\/workshop\/[A-F0-9]+/g);
     console.log(
@@ -542,6 +547,13 @@ async function searchMod(searchTerm, retryCount = 0) {
       } workshop links in HTML:`,
       workshopLinks ? workshopLinks.slice(0, 5) : []
     );
+
+    // Debug: Look for common patterns that indicate the page loaded correctly
+    const hasWorkshopContent = response.data.includes("workshop");
+    const hasSearchResults =
+      response.data.includes("search") || response.data.includes("result");
+    console.log(`Page contains workshop content: ${hasWorkshopContent}`);
+    console.log(`Page contains search results: ${hasSearchResults}`);
 
     const searchResults = extractSearchResultsFromHtml(
       response.data,
@@ -569,6 +581,7 @@ async function searchMod(searchTerm, retryCount = 0) {
     };
   } catch (error) {
     console.error(`Error searching for mod "${searchTerm}":`, error.message);
+    console.error(`Error details:`, error);
 
     if (retryCount < MAX_RETRIES) {
       console.log(
@@ -578,12 +591,18 @@ async function searchMod(searchTerm, retryCount = 0) {
       return searchMod(searchTerm, retryCount + 1);
     }
 
+    // Return empty results if search fails completely
+    console.log(
+      `Search failed completely for "${searchTerm}": ${error.message}`
+    );
+
     return {
       searchTerm,
       results: [],
       totalFound: 0,
       status: "error",
-      message: `Error: ${error.message}`,
+      message: `Search failed: ${error.message}`,
+      hasMultipleResults: false,
     };
   }
 }
@@ -613,6 +632,7 @@ async function getModVersionHandler(req, res) {
       modId: modId,
       version: result.version,
       dependencies: result.dependencies,
+      size: result.size,
       success: true,
     });
   } catch (error) {
@@ -633,6 +653,25 @@ export default async function handler(req, res) {
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  // Test connectivity to Arma Reforger API on first request
+  const isVercel = process.env.VERCEL === "1" || process.env.VERCEL_ENV;
+  if (isVercel) {
+    console.log("Testing connectivity to Arma Reforger API...");
+    try {
+      const testResponse = await makeRequest(
+        "https://reforger.armaplatform.com/workshop",
+        {
+          timeout: 10000,
+        }
+      );
+      console.log(
+        `Connectivity test successful: HTTP ${testResponse.status}, length: ${testResponse.data.length}`
+      );
+    } catch (error) {
+      console.error("Connectivity test failed:", error.message);
+    }
   }
 
   try {
