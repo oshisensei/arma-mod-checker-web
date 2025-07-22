@@ -8,13 +8,12 @@
   </head>
   <body>
     <div class="container">
-      <h1>🎮 Arma Reforger Mod Checker</h1>
+      <h1>📋 Arma Reforger Mod Manager</h1>
 
       <div class="upload-section">
-        <h2>📁 Upload Your Server Config</h2>
         <p>
-          Select your Arma Reforger server config.json file or paste the content
-          directly
+          Manage your server mods by uploading config files, pasting JSON, or
+          creating new mod lists
         </p>
 
         <!-- Tab Navigation -->
@@ -35,6 +34,13 @@
           </button>
           <button id="pasteTab" class="tab-button" onclick="switchTab('paste')">
             📋 Paste JSON
+          </button>
+          <button
+            id="searchTab"
+            class="tab-button"
+            onclick="switchTab('search')"
+          >
+            📋 Create Mod List
           </button>
         </div>
 
@@ -77,6 +83,33 @@
               resize: vertical;
             "
           ></textarea>
+        </div>
+
+        <!-- Search Section -->
+        <div id="searchSection" class="tab-content">
+          <div style="margin-bottom: 20px">
+            <p>Enter mod names (one per line or separated by commas):</p>
+            <textarea
+              id="searchText"
+              placeholder="AMF_VEHICULE01
+Arquus AREG
+ACE Core
+..."
+              style="
+                width: 100%;
+                height: 200px;
+                padding: 15px;
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                background: rgba(0, 0, 0, 0.3);
+                color: white;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                resize: vertical;
+              "
+            ></textarea>
+          </div>
+          <button id="searchButton" class="check-button">🔍 Search Mods</button>
         </div>
 
         <div id="fileInfo" style="margin-top: 15px; display: none">

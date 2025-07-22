@@ -1,15 +1,33 @@
 let configData = null;
 let checkResults = null;
+let pendingModSelections = new Map(); // Store pending selections for multiple results
+let hasMultipleResults = false; // Track if we're in selection mode
+let pendingSearchTerms = []; // Track which search terms need selection
+let selectedMods = []; // Store all selected mods
 
 // Tab switching functionality
 function switchTab(tab) {
   document.getElementById("uploadTab").classList.remove("active");
   document.getElementById("pasteTab").classList.remove("active");
+  document.getElementById("searchTab").classList.remove("active");
   document.getElementById(tab + "Tab").classList.add("active");
 
   document.getElementById("uploadSection").classList.remove("active");
   document.getElementById("pasteSection").classList.remove("active");
+  document.getElementById("searchSection").classList.remove("active");
   document.getElementById(tab + "Section").classList.add("active");
+
+  // Show/hide the Analyze Mods button based on the active tab
+  const checkButton = document.getElementById("checkButton");
+  if (tab === "search") {
+    checkButton.style.display = "none";
+  } else {
+    checkButton.style.display = "inline-block";
+  }
+
+  // Hide results section when switching tabs
+  document.getElementById("progressSection").style.display = "none";
+  document.getElementById("resultsSection").style.display = "none";
 
   resetConfigState();
 }
@@ -20,6 +38,7 @@ function resetConfigState() {
   document.getElementById("fileInfo").style.display = "none";
   document.getElementById("configFile").value = "";
   document.getElementById("configText").value = "";
+  document.getElementById("searchText").value = "";
 }
 
 // Unified function to parse JSON and analyze mods
@@ -153,6 +172,9 @@ document.getElementById("configFile").addEventListener("change", function (e) {
 document
   .getElementById("checkButton")
   .addEventListener("click", parseAndAnalyzeMods);
+
+// Search mods button
+document.getElementById("searchButton").addEventListener("click", searchMods);
 
 // Share button
 document
@@ -344,6 +366,525 @@ function updateProgress(current, total, modName) {
   document.getElementById(
     "progressText"
   ).textContent = `Checking ${current}/${total}: ${modName}`;
+}
+
+// Function to search for mods by name
+async function searchMods() {
+  const searchText = document.getElementById("searchText").value.trim();
+
+  if (!searchText) {
+    showError("Please enter mod names to search for");
+    return;
+  }
+
+  // Parse search terms (split by newlines or commas)
+  const searchTerms = searchText
+    .split(/[\n,]+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length > 0);
+
+  if (searchTerms.length === 0) {
+    showError("No valid search terms found");
+    return;
+  }
+
+  // Reset state for new search
+  pendingModSelections.clear();
+  pendingSearchTerms = [];
+  selectedMods = [];
+  hasMultipleResults = false;
+
+  const button = document.getElementById("searchButton");
+  const originalText = button.innerHTML;
+  button.innerHTML = '<span class="loading"></span>Searching...';
+  button.disabled = true;
+
+  document.getElementById("progressSection").style.display = "block";
+  document.getElementById("resultsSection").style.display = "none";
+
+  try {
+    // Determine the correct API URL based on environment
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const apiUrl = isLocalhost
+      ? "/api/search-mods"
+      : `${window.location.origin}/api/search-mods`;
+
+    console.log("Using search API URL:", apiUrl);
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        searchTerms: searchTerms,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Search API Error Response:", errorText);
+      throw new Error(`Server error: ${response.status} - ${errorText}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      let lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const data = JSON.parse(line);
+
+            console.log("Received data type:", data.type, data);
+            if (data.type === "progress") {
+              updateSearchProgress(data.current, data.total, data.searchTerm);
+            } else if (data.type === "multiple_results") {
+              console.log(
+                "Showing mod selection for:",
+                data.searchTerm,
+                "with",
+                data.results.length,
+                "results"
+              );
+              hasMultipleResults = true;
+              pendingSearchTerms.push(data.searchTerm);
+              pendingModSelections.set(data.searchTerm, data.results);
+            } else if (data.type === "complete") {
+              console.log(
+                "Showing search results with",
+                data.mods ? data.mods.length : 0,
+                "mods"
+              );
+              // Add any single results to selectedMods
+              if (data.mods && data.mods.length > 0) {
+                selectedMods.push(...data.mods);
+              }
+
+              // If we have pending selections, show the first one
+              if (pendingSearchTerms.length > 0) {
+                showNextModSelection();
+              } else {
+                // All done, show final results
+                showFinalSearchResults();
+              }
+            }
+          } catch (error) {
+            console.error("Error parsing search response:", error);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Search error:", error);
+    showError(`Search failed: ${error.message}`);
+  } finally {
+    button.innerHTML = originalText;
+    button.disabled = false;
+  }
+}
+
+function updateSearchProgress(current, total, searchTerm) {
+  const percentage = (current / total) * 100;
+  document.getElementById("progressFill").style.width = percentage + "%";
+  document.getElementById(
+    "progressText"
+  ).textContent = `Searching ${current}/${total}: "${searchTerm}"`;
+}
+
+function showNextModSelection() {
+  if (pendingSearchTerms.length === 0) {
+    showFinalSearchResults();
+    return;
+  }
+
+  const nextSearchTerm = pendingSearchTerms[0];
+  const results = pendingModSelections.get(nextSearchTerm);
+
+  if (!results) {
+    pendingSearchTerms.shift(); // Remove this term and try next
+    showNextModSelection();
+    return;
+  }
+
+  const data = {
+    searchTerm: nextSearchTerm,
+    results: results,
+    totalFound: results.length,
+  };
+
+  showModSelection(data);
+}
+
+function showFinalSearchResults() {
+  const data = {
+    type: "complete",
+    timestamp: new Date().toISOString(),
+    mods: selectedMods,
+  };
+
+  showSearchResults(data);
+}
+
+function showModSelection(data) {
+  // Hide progress and show selection interface
+  document.getElementById("progressSection").style.display = "none";
+
+  // Create selection interface
+  const resultsSection = document.getElementById("resultsSection");
+  resultsSection.style.display = "block";
+
+  const summaryCards = document.getElementById("summaryCards");
+  summaryCards.innerHTML = `
+    <div class="summary-card missing-deps">
+      <h3>${data.totalFound}</h3>
+      <p>🔍 Multiple Results Found</p>
+    </div>
+    <div class="summary-card up-to-date">
+      <h3>${data.searchTerm}</h3>
+      <p>📋 Please Select One</p>
+    </div>
+  `;
+
+  const modDetails = document.getElementById("modDetails");
+  let detailsHtml = `<h3>🔍 Multiple results found for "${data.searchTerm}"</h3>`;
+  detailsHtml += `<p>Please select the correct mod:</p>`;
+  detailsHtml += `<div class="mod-selection-list">`;
+
+  data.results.forEach((mod, index) => {
+    const imageHtml = mod.imageUrl
+      ? `<div class="mod-selection-image">
+               <img src="${mod.imageUrl}" alt="${mod.name}" onerror="this.style.display='none'">
+             </div>`
+      : `<div class="mod-selection-image-placeholder">
+               <span>📦</span>
+             </div>`;
+
+    detailsHtml += `
+          <div class="mod-selection-item" onclick="selectModFromSearch('${mod.modId}', '${mod.name}', '${data.searchTerm}')">
+            ${imageHtml}
+            <div class="mod-selection-info">
+              <h4>${mod.name}</h4>
+              <p><strong>ID:</strong> ${mod.modId}</p>
+              <p><strong>Version:</strong> Will be fetched when selected</p>
+            </div>
+            <div class="mod-selection-action">
+              <button class="select-mod-btn">Select</button>
+            </div>
+          </div>
+        `;
+  });
+
+  detailsHtml += `</div>`;
+  modDetails.innerHTML = detailsHtml;
+
+  // Store the selection data for later use
+  pendingModSelections.set(data.searchTerm, data.results);
+}
+
+function showSearchResults(data) {
+  document.getElementById("progressSection").style.display = "none";
+  document.getElementById("resultsSection").style.display = "block";
+
+  // Show summary cards for search results
+  const summaryCards = document.getElementById("summaryCards");
+  const modsCount = data.mods ? data.mods.length : 0;
+
+  summaryCards.innerHTML = `
+        <div class="summary-card up-to-date">
+            <h3>${modsCount}</h3>
+            <p>✅ Mods Found</p>
+        </div>
+        <div class="summary-card missing-deps">
+            <h3>${
+              data.timestamp ? new Date(data.timestamp).toLocaleString() : "Now"
+            }</h3>
+            <p>🕒 Generated</p>
+        </div>
+    `;
+
+  // Show the generated JSON
+  const modDetails = document.getElementById("modDetails");
+  let detailsHtml = "<h3>📋 Generated JSON</h3>";
+
+  if (data.mods && data.mods.length > 0) {
+    // Filter out imageUrl and dependencies from the final JSON output
+    // Keep only the basic mod info (modId, name, version)
+    const cleanMods = data.mods.map((mod) => {
+      const { imageUrl, dependencies, isDependency, ...cleanMod } = mod;
+      return cleanMod;
+    });
+
+    // Remove duplicates based on modId
+    const uniqueMods = cleanMods.filter(
+      (mod, index, self) =>
+        index === self.findIndex((m) => m.modId === mod.modId)
+    );
+
+    // Sort by name alphabetically
+    const sortedMods = uniqueMods.sort((a, b) =>
+      a.name.localeCompare(b.name, "en", { sensitivity: "base" })
+    );
+
+    const jsonOutput = {
+      mods: sortedMods,
+    };
+
+    detailsHtml += `
+      <div class="json-output">
+        <pre><code>${JSON.stringify(jsonOutput, null, 4)}</code></pre>
+        <button class="copy-json-btn" onclick="copyJsonToClipboard('${JSON.stringify(
+          jsonOutput
+        ).replace(/'/g, "\\'")}')">
+          📋 Copy JSON
+        </button>
+      </div>
+    `;
+  } else {
+    detailsHtml += `
+      <div class="no-results">
+        <p>No mods found for the search terms.</p>
+      </div>
+    `;
+  }
+
+  modDetails.innerHTML = detailsHtml;
+
+  // Hide size analysis and dependency graph for search results
+  document.getElementById("sizeAnalysis").style.display = "none";
+  document.getElementById("fullscreenNetworkBtn").style.display = "none";
+}
+
+// Function to copy JSON to clipboard
+function copyJsonToClipboard(jsonString) {
+  navigator.clipboard
+    .writeText(jsonString)
+    .then(() => {
+      showSuccess("JSON copied to clipboard!");
+    })
+    .catch((err) => {
+      showError("Failed to copy JSON: " + err.message);
+    });
+}
+
+async function selectModFromSearch(modId, modName, searchTerm) {
+  // Get the selected mod from pending selections
+  const availableMods = pendingModSelections.get(searchTerm);
+  const selectedMod = availableMods.find((mod) => mod.modId === modId);
+
+  if (!selectedMod) {
+    showError("Selected mod not found");
+    return;
+  }
+
+  // Show loading state
+  const modDetails = document.getElementById("modDetails");
+  modDetails.innerHTML = `
+    <h3>📋 Getting Mod Version...</h3>
+    <div class="loading-message">
+      <div class="loading"></div>
+      <p>Fetching version for ${selectedMod.name}...</p>
+    </div>
+  `;
+
+  try {
+    // Get the mod version from the API
+    const isLocalhost =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const apiUrl = isLocalhost
+      ? "/api/search-mods"
+      : `${window.location.origin}/api/search-mods`;
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        modId: modId,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Server error: ${response.status}`);
+    }
+
+    const versionData = await response.json();
+
+    if (!versionData.success) {
+      throw new Error("Failed to get mod version");
+    }
+
+    // Update the selected mod with the real version and dependencies
+    selectedMod.version = versionData.version;
+    selectedMod.dependencies = versionData.dependencies || [];
+
+    // Add the selected mod to our collection
+    selectedMods.push(selectedMod);
+
+    // Process dependencies: get their versions and add them as separate mods
+    if (selectedMod.dependencies && selectedMod.dependencies.length > 0) {
+      showSuccess(
+        `Processing ${selectedMod.dependencies.length} dependencies for ${selectedMod.name}...`
+      );
+
+      for (const dep of selectedMod.dependencies) {
+        // Check if this dependency is already in our collection
+        const existingMod = selectedMods.find((mod) => mod.modId === dep.modId);
+        if (existingMod) {
+          console.log(`Dependency ${dep.name} already exists in collection`);
+          continue;
+        }
+
+        try {
+          // Get version for this dependency
+          const depResponse = await fetch(apiUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              modId: dep.modId,
+            }),
+          });
+
+          if (depResponse.ok) {
+            const depVersionData = await depResponse.json();
+            if (depVersionData.success) {
+              // Add dependency as a separate mod
+              const dependencyMod = {
+                modId: dep.modId,
+                name: dep.name,
+                version: depVersionData.version,
+                dependencies: depVersionData.dependencies || [],
+                isDependency: true, // Flag to identify dependencies
+              };
+              selectedMods.push(dependencyMod);
+              console.log(
+                `Added dependency: ${dep.name} (${dep.modId}) - Version: ${depVersionData.version}`
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            `Failed to get version for dependency ${dep.name}:`,
+            error
+          );
+          // Add dependency without version if we can't get it
+          const dependencyMod = {
+            modId: dep.modId,
+            name: dep.name,
+            version: "Unknown",
+            dependencies: [],
+            isDependency: true,
+          };
+          selectedMods.push(dependencyMod);
+        }
+      }
+    }
+
+    // Remove from pending selections and terms
+    pendingModSelections.delete(searchTerm);
+    pendingSearchTerms.shift(); // Remove the current search term
+
+    // Show success message
+    const depsCount = selectedMod.dependencies
+      ? selectedMod.dependencies.length
+      : 0;
+    const totalModsCount = selectedMods.length;
+    showSuccess(
+      `Selected: ${selectedMod.name} (${selectedMod.modId}) - Version: ${selectedMod.version} - Dependencies: ${depsCount} - Total mods: ${totalModsCount}`
+    );
+
+    // Check if there are more mods to select
+    if (pendingSearchTerms.length > 0) {
+      // Show progress for remaining selections
+      const remainingCount = pendingSearchTerms.length;
+      const summaryCards = document.getElementById("summaryCards");
+      summaryCards.innerHTML = `
+        <div class="summary-card up-to-date">
+          <h3>${selectedMods.length}</h3>
+          <p>✅ Mods Selected</p>
+        </div>
+        <div class="summary-card missing-deps">
+          <h3>${remainingCount}</h3>
+          <p>⏳ Remaining</p>
+        </div>
+      `;
+
+      modDetails.innerHTML = `
+        <h3>📋 Mod Selected Successfully</h3>
+        <div class="success-message">
+          <p>✅ <strong>${selectedMod.name}</strong> has been added to your selection.</p>
+          <p>📋 Next: Please select a mod for <strong>"${pendingSearchTerms[0]}"</strong></p>
+        </div>
+      `;
+
+      // Show the next mod selection after a short delay
+      setTimeout(() => {
+        showNextModSelection();
+      }, 1500);
+    } else {
+      // All selections complete, show final results
+      hasMultipleResults = false;
+      showFinalSearchResults();
+    }
+  } catch (error) {
+    console.error("Error getting mod version:", error);
+    showError(`Failed to get version: ${error.message}`);
+
+    // Still show the mod but with unknown version
+    selectedMod.version = "Unknown";
+
+    const jsonOutput = { mods: [selectedMod] };
+
+    modDetails.innerHTML = `
+      <h3>📋 Selected Mod JSON (Version Unknown)</h3>
+      <div class="json-output">
+        <pre><code>${JSON.stringify(jsonOutput, null, 4)}</code></pre>
+        <button class="copy-json-btn" onclick="copyJsonToClipboard('${JSON.stringify(
+          jsonOutput
+        ).replace(/'/g, "\\'")}')">
+          📋 Copy JSON
+        </button>
+      </div>
+    `;
+  }
+}
+
+// Function to select a mod from search results
+function selectMod(modId, modName) {
+  // Create a config-like structure for the selected mod
+  const selectedMod = {
+    modId: modId,
+    name: modName,
+    version: "Unknown", // We don't have version info from search
+  };
+
+  // Switch to paste tab and populate with the selected mod
+  switchTab("paste");
+
+  const configText = document.getElementById("configText");
+  const config = {
+    game: {
+      mods: [selectedMod],
+    },
+  };
+
+  configText.value = JSON.stringify(config, null, 2);
+  showSuccess(`Selected mod: ${modName} (${modId})`);
 }
 
 // Helper function to safely get dependencies
@@ -1248,7 +1789,13 @@ async function loadSharedData() {
 }
 
 // Load shared data when page loads
-document.addEventListener("DOMContentLoaded", loadSharedData);
+document.addEventListener("DOMContentLoaded", function () {
+  loadSharedData();
+
+  // Ensure the Analyze Mods button is visible by default (upload tab is active)
+  const checkButton = document.getElementById("checkButton");
+  checkButton.style.display = "inline-block";
+});
 
 // Function to create a force that prevents link crossings
 function createLinkCollisionForce(links, strength = 30) {
