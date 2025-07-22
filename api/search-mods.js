@@ -560,6 +560,34 @@ async function searchMod(searchTerm, retryCount = 0) {
       searchTerm
     );
 
+    // If there's exactly one result, get the version and dependencies automatically
+    if (searchResults.length === 1) {
+      const singleResult = searchResults[0];
+      console.log(
+        `Single result found for "${searchTerm}", getting version and dependencies...`
+      );
+
+      const versionData = await getModVersion(singleResult.modId);
+
+      const modWithVersion = {
+        modId: singleResult.modId,
+        name: singleResult.name,
+        version: versionData.version,
+        dependencies: versionData.dependencies,
+        size: versionData.size,
+        imageUrl: singleResult.imageUrl,
+      };
+
+      return {
+        searchTerm,
+        results: [modWithVersion],
+        totalFound: 1,
+        status: "found",
+        message: `Found 1 result with version ${versionData.version}`,
+        hasMultipleResults: false,
+      };
+    }
+
     // For multiple results, don't get versions yet - let user choose first
     const modsWithVersions = searchResults.map((result) => ({
       modId: result.modId,

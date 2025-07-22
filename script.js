@@ -508,10 +508,10 @@ async function searchMods() {
                 showNextModSelection();
               } else if (selectedMods.length > 0) {
                 // We have some selected mods, show final results
-                showFinalSearchResults();
+                await showFinalSearchResults();
               } else {
                 // No mods found at all
-                showFinalSearchResults();
+                await showFinalSearchResults();
               }
             }
           } catch (error) {
@@ -537,9 +537,9 @@ function updateSearchProgress(current, total, searchTerm) {
   ).textContent = `Searching ${current}/${total}: "${searchTerm}"`;
 }
 
-function showNextModSelection() {
+async function showNextModSelection() {
   if (pendingSearchTerms.length === 0) {
-    showFinalSearchResults();
+    await showFinalSearchResults();
     return;
   }
 
@@ -561,14 +561,14 @@ function showNextModSelection() {
   showModSelection(data);
 }
 
-function showFinalSearchResults() {
+async function showFinalSearchResults() {
   const data = {
     type: "complete",
     timestamp: new Date().toISOString(),
     mods: selectedMods,
   };
 
-  showSearchResults(data);
+  await showSearchResults(data);
 }
 
 function showModSelection(data) {
@@ -627,7 +627,7 @@ function showModSelection(data) {
   pendingModSelections.set(data.searchTerm, data.results);
 }
 
-function showSearchResults(data) {
+async function showSearchResults(data) {
   document.getElementById("progressSection").style.display = "none";
   document.getElementById("resultsSection").style.display = "block";
 
@@ -635,12 +635,12 @@ function showSearchResults(data) {
   const summaryCards = document.getElementById("summaryCards");
   const modsCount = data.mods ? data.mods.length : 0;
 
-  // Calculate total size of all mods
-  const totalSize = data.mods
+  // Calculate initial total size of all mods
+  const initialTotalSize = data.mods
     ? data.mods.reduce((sum, mod) => sum + (mod.size || 0), 0)
     : 0;
-  const totalSizeFormatted =
-    totalSize > 0 ? totalSize.toFixed(1) + " MB" : "Unknown";
+  const initialTotalSizeFormatted =
+    initialTotalSize > 0 ? initialTotalSize.toFixed(1) + " MB" : "Unknown";
 
   summaryCards.innerHTML = `
         <div class="summary-card up-to-date">
@@ -648,7 +648,7 @@ function showSearchResults(data) {
             <p>✅ Mods Found</p>
         </div>
         <div class="summary-card missing-deps">
-            <h3>${totalSizeFormatted}</h3>
+            <h3>${initialTotalSizeFormatted}</h3>
             <p>📦 Total Size</p>
         </div>
     `;
@@ -658,38 +658,210 @@ function showSearchResults(data) {
   let detailsHtml = "<h3>📋 Generated JSON</h3>";
 
   if (data.mods && data.mods.length > 0) {
-    // Filter out imageUrl and dependencies from the final JSON output
-    // Keep only the basic mod info (modId, name, version)
-    const cleanMods = data.mods.map((mod) => {
-      const { imageUrl, dependencies, isDependency, ...cleanMod } = mod;
-      return cleanMod;
-    });
+    // First, collect all dependencies that need version fetching
+    const dependenciesToFetch = [];
+    const seenModIds = new Set();
 
-    // Remove duplicates based on modId
-    const uniqueMods = cleanMods.filter(
-      (mod, index, self) =>
-        index === self.findIndex((m) => m.modId === mod.modId)
-    );
+    for (const mod of data.mods) {
+      seenModIds.add(mod.modId);
 
-    // Sort by name alphabetically
-    const sortedMods = uniqueMods.sort((a, b) =>
-      a.name.localeCompare(b.name, "en", { sensitivity: "base" })
-    );
+      if (mod.dependencies && mod.dependencies.length > 0) {
+        for (const dep of mod.dependencies) {
+          if (!seenModIds.has(dep.modId)) {
+            seenModIds.add(dep.modId);
 
-    const jsonOutput = {
-      mods: cleanModsForJson(sortedMods),
-    };
+            // Check if this dependency is already in our mods list
+            const existingDep = data.mods.find((m) => m.modId === dep.modId);
+            if (!existingDep) {
+              dependenciesToFetch.push(dep);
+            }
+          }
+        }
+      }
+    }
 
-    detailsHtml += `
-      <div class="json-output">
-        <pre><code>${JSON.stringify(jsonOutput, null, 4)}</code></pre>
-        <button class="copy-json-btn" onclick="copyJsonToClipboard('${JSON.stringify(
-          jsonOutput
-        ).replace(/'/g, "\\'")}')">
-          📋 Copy JSON
-        </button>
-      </div>
-    `;
+    // Fetch versions for dependencies if needed
+    if (dependenciesToFetch.length > 0) {
+      console.log(
+        `Fetching versions for ${dependenciesToFetch.length} dependencies...`
+      );
+
+      const modDetails = document.getElementById("modDetails");
+      modDetails.innerHTML = `
+        <h3>📋 Processing Dependencies...</h3>
+        <div class="loading-message">
+          <div class="loading"></div>
+          <p>Fetching versions for ${dependenciesToFetch.length} dependencies...</p>
+        </div>
+      `;
+
+      // Determine the correct API URL
+      const isLocalhost =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1";
+      const apiUrl = isLocalhost
+        ? "/api/search-mods"
+        : `${window.location.origin}/api/search-mods`;
+
+      // Fetch versions for dependencies
+      const dependencyMods = [];
+      for (const dep of dependenciesToFetch) {
+        try {
+          const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ modId: dep.modId }),
+          });
+
+          if (response.ok) {
+            const versionData = await response.json();
+            if (versionData.success) {
+              dependencyMods.push({
+                modId: dep.modId,
+                name: dep.name,
+                version: versionData.version,
+                dependencies: versionData.dependencies || [],
+                size: versionData.size || 0,
+              });
+            } else {
+              dependencyMods.push({
+                modId: dep.modId,
+                name: dep.name,
+                version: "Unknown",
+                dependencies: [],
+                size: 0,
+              });
+            }
+          } else {
+            dependencyMods.push({
+              modId: dep.modId,
+              name: dep.name,
+              version: "Unknown",
+              dependencies: [],
+              size: 0,
+            });
+          }
+        } catch (error) {
+          console.error(
+            `Failed to get version for dependency ${dep.name}:`,
+            error
+          );
+          dependencyMods.push({
+            modId: dep.modId,
+            name: dep.name,
+            version: "Unknown",
+            dependencies: [],
+            size: 0,
+          });
+        }
+      }
+
+      // Combine original mods with dependency mods
+      const allMods = [...data.mods, ...dependencyMods];
+
+      // Recalculate total size including dependencies
+      const finalTotalSize = allMods.reduce(
+        (sum, mod) => sum + (mod.size || 0),
+        0
+      );
+      const finalTotalSizeFormatted =
+        finalTotalSize > 0 ? finalTotalSize.toFixed(1) + " MB" : "Unknown";
+
+      // Update summary cards with correct total size
+      const finalModsCount = allMods.length;
+      summaryCards.innerHTML = `
+        <div class="summary-card up-to-date">
+            <h3>${finalModsCount}</h3>
+            <p>✅ Mods Found</p>
+        </div>
+        <div class="summary-card missing-deps">
+            <h3>${finalTotalSizeFormatted}</h3>
+            <p>📦 Total Size</p>
+        </div>
+      `;
+
+      // Process mods to include dependencies and remove duplicates
+      const processedMods = [];
+      const processedModIds = new Set();
+
+      for (const mod of allMods) {
+        // Skip if we've already seen this mod
+        if (processedModIds.has(mod.modId)) {
+          continue;
+        }
+        processedModIds.add(mod.modId);
+
+        // Create clean mod object (remove imageUrl and isDependency flag)
+        const cleanMod = {
+          modId: mod.modId,
+          name: mod.name,
+          version: mod.version,
+        };
+
+        processedMods.push(cleanMod);
+      }
+
+      // Sort by name alphabetically
+      const sortedMods = processedMods.sort((a, b) =>
+        a.name.localeCompare(b.name, "en", { sensitivity: "base" })
+      );
+
+      const jsonOutput = {
+        mods: cleanModsForJson(sortedMods),
+      };
+
+      detailsHtml += `
+        <div class="json-output">
+          <pre><code>${JSON.stringify(jsonOutput, null, 4)}</code></pre>
+          <button class="copy-json-btn" onclick="copyJsonToClipboard('${JSON.stringify(
+            jsonOutput
+          ).replace(/'/g, "\\'")}')">
+            📋 Copy JSON
+          </button>
+        </div>
+      `;
+    } else {
+      // No dependencies to fetch, process mods normally
+      const processedMods = [];
+      const processedModIds = new Set();
+
+      for (const mod of data.mods) {
+        // Skip if we've already seen this mod
+        if (processedModIds.has(mod.modId)) {
+          continue;
+        }
+        processedModIds.add(mod.modId);
+
+        // Create clean mod object (remove imageUrl and isDependency flag)
+        const cleanMod = {
+          modId: mod.modId,
+          name: mod.name,
+          version: mod.version,
+        };
+
+        processedMods.push(cleanMod);
+      }
+
+      // Sort by name alphabetically
+      const sortedMods = processedMods.sort((a, b) =>
+        a.name.localeCompare(b.name, "en", { sensitivity: "base" })
+      );
+
+      const jsonOutput = {
+        mods: cleanModsForJson(sortedMods),
+      };
+
+      detailsHtml += `
+        <div class="json-output">
+          <pre><code>${JSON.stringify(jsonOutput, null, 4)}</code></pre>
+          <button class="copy-json-btn" onclick="copyJsonToClipboard('${JSON.stringify(
+            jsonOutput
+          ).replace(/'/g, "\\'")}')">
+            📋 Copy JSON
+          </button>
+        </div>
+      `;
+    }
   } else {
     detailsHtml += `
       <div class="no-results">
@@ -890,7 +1062,7 @@ async function selectModFromSearch(modId, modName, searchTerm) {
     } else {
       // All selections complete, show final results
       hasMultipleResults = false;
-      showFinalSearchResults();
+      await showFinalSearchResults();
     }
   } catch (error) {
     console.error("Error getting mod version:", error);
