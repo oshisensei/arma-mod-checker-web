@@ -19,8 +19,7 @@
     "@types/node": "^24.0.0"
   },
   "engines": {
-    "node": "18.x",
-    "npm": "10.x"
+    "node": "22.x"
   },
   "keywords": [
     "arma",
